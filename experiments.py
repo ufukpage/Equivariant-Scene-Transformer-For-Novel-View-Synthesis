@@ -5,12 +5,14 @@ import time
 import torch
 from misc.dataloaders import scene_render_dataloader
 from models.neural_renderer import NeuralRenderer, TransformerRenderer
-from models.transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
+from models.vision_transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
 from training.training import Trainer
 
 if "__main__" == __name__:
     test_transformer = 0
     if test_transformer:
+        from nystrom_attention import Nystromformer
+
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         path_to_config = sys.argv[1]
         with open(path_to_config) as file:
@@ -18,28 +20,31 @@ if "__main__" == __name__:
 
         from x_transformers import ViTransformerWrapper, TransformerWrapper, Encoder, Decoder
         import torch.nn as nn
-
+        from nystrom_attention import Nystromer
         inv_transform_2d = ViTransformer2DEncoder(
             image_size=config["img_shape"][1],
             patch_size=config["patch_size_2d"],
-            attn_layers=Encoder(
+            transformer=Nystromformer(
                 dim=1024,
                 depth=6,
                 heads=8,
-                ff_glu=True
-            )
+                num_landmarks=256,
+            ),
+            dim=1024
         ).to(device)
 
         inv_transform_3d = ViTransformer3DEncoder(
             volume_size=32,
             patch_size=config["patch_size_3d"],
-            attn_layers=Encoder(
+            transformer=Encoder(
                 dim=2048,
                 depth=6,
                 heads=8,
                 ff_glu=True
-            )
+            ),
+            dim=2048
         ).to(device)
+
         # uplift3d = nn.Linear(1024, 1024)
         uplift3d = nn.Conv2d(256, 1024, kernel_size=1).to(device)
 

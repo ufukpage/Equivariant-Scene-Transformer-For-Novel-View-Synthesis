@@ -4,6 +4,7 @@ from misc.utils import pretty_print_layers_info, count_parameters
 from models.submodels import ResNet2d, ResNet3d, Projection, InverseProjection
 from models.rotation_layers import SphericalMask, Rotate3d
 
+
 from timesformer_pytorch import TimeSformer
 class NeuralRenderer(nn.Module):
     """Implements a Neural Renderer with an implicit scene representation that
@@ -265,8 +266,11 @@ class NeuralRenderer(nn.Module):
         }, filename)
 
 
-from models.transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
-from x_transformers import Encoder, Decoder
+# from models.transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
+from models.vision_transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
+from x_transformers import Encoder
+from nystrom_attention import Nystromer
+from einops.layers.torch import Rearrange
 
 
 class TransformerRenderer(NeuralRenderer):
@@ -277,91 +281,99 @@ class TransformerRenderer(NeuralRenderer):
                                                   num_channels_inv_projection=config["num_channels_inv_projection"],
                                                   num_channels_projection=config["num_channels_projection"],
                                                   mode=config["mode"])
-        self.inv_transform_2d = ViTransformer2DEncoder(
+        self.inv_transformer_2d = ViTransformer2DEncoder(
             image_size=config["img_shape"][1],
             patch_size=config["patch_size_2d"],
-            attn_layers=Encoder(
+            transformer=Nystromer(
+                dim=128,
+                depth=1,
+                heads=1,
+                num_landmarks=256,
+            ).cuda(),
+            dim=128
+        )
+        output_size = config["img_shape"][1]//config["patch_size_2d"]
+        self.inv_transform_2d = nn.Sequential(
+                                self.inv_transformer_2d,
+                                Rearrange('b (p1 p2) c -> b c p1 p2', p1=output_size, p2=output_size)
+                                )
+
+        self.inv_projection_transformer = ViTransformer2DEncoder(
+            image_size=output_size,
+            patch_size=1, #config["patch_size_2d"],
+            channels=128,
+            dim=1024,
+            transformer=Nystromer(
                 dim=1024,
-                depth=1,
+                depth=2,
                 heads=8,
-                ff_glu=True,
-                rel_pos_bias=True,
-                use_scalenorm=True
-            )
+                num_landmarks=256,
+            ).cuda()
         )
 
-        self.rotation_layer = Rotate3d(self.mode)
-        self.inv_transform_3d = ViTransformer3DEncoder(
-            volume_size=32,
-            patch_size=config["patch_size_3d"],
-            attn_layers=Encoder(
-                dim=2048,
-                depth=1,
+        self.inv_projection = nn.Sequential(
+                                self.inv_projection_transformer,
+                                Rearrange('b (p p2) (d p1) -> b d p1 p p2', p1=output_size, p2=output_size)
+                            )
+
+        self.inv_transformer_3d = ViTransformer3DEncoder(
+            volume_size=output_size,
+            patch_size=1, # config["patch_size_3d"],
+            transformer=Nystromer(
+                dim=output_size * 2,
+                depth=2,
                 heads=8,
-                ff_glu=True,
-                rel_pos_bias=True,
-                use_scalenorm = True
-            )
+                num_landmarks=256,
+            ).cuda(),
+            dim=output_size * 2
+        )
+        self.inv_transform_3d = nn.Sequential(
+                                self.inv_transformer_3d,
+                                Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
+                                          c=output_size*2)
+                            )
+
+        self.spherical_mask = SphericalMask((output_size*2, output_size, output_size, output_size))
+
+        self.transformer_3d = ViTransformer3DEncoder(
+            volume_size=output_size,
+            patch_size=1,
+            channels=output_size * 2,
+            transformer=Nystromer(
+                dim=output_size,
+                depth=2,
+                heads=8,
+                num_landmarks=256,
+            ).cuda(),
+            dim=output_size
         )
 
-        self.transform_3d = self.inv_transform_3d = ViTransformer3DEncoder(
-            volume_size=32,
-            patch_size=config["patch_size_3d"],
-            attn_layers=Encoder(
-                dim=2048,
-                depth=1,
+        self.transform_3d = nn.Sequential(
+                                self.transformer_3d,
+                                Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
+                                          c=output_size)
+                            )
+
+        self.projection_transformer = ViTransformer2DEncoder(
+            image_size=output_size,
+            patch_size=1,
+            channels=output_size * output_size,
+            transformer=Nystromer(
+                dim=256,
+                depth=2,
                 heads=8,
-                ff_glu=True,
-                rel_pos_bias=True,
-                use_scalenorm=True
-            )
+                num_landmarks=256,
+            ).cuda(),
+            dim=256
         )
 
-        self.transform_2d = ViTransformer2DEncoder(
-            image_size=32,
-            patch_size=8,
-            channel_size=32*32,
-            attn_layers=Encoder(
-                dim=1024,
-                depth=1,
-                heads=8,
-                ff_glu=True,
-                rel_pos_bias=True,
-                use_scalenorm=True
-            )
-        )
-        # uplift3d = nn.Linear(1024, 1024)
-        self.uplift3d = nn.Conv2d(256, 1024, kernel_size=1)
-        self.final_render = nn.Conv2d(1, 3, kernel_size=1)
-        self.spherical_mask = SphericalMask((32, 32, 32, 32))
+        self.projection = nn.Sequential(Rearrange('b c d h w -> b (c d) h w'),
+                                        self.projection_transformer,
+                                        Rearrange('b (p1 p2) c -> b c p1 p2', p1=output_size, p2=output_size)
+                                        )
 
     def print_model_info(self):
-        pass
-
-    def inverse_render(self, img):
-        batch_size = img.shape[0]
-        feats_1d = self.inv_transform_2d(img)  # (1, 1000)
-
-        feats_2d = feats_1d.view(batch_size, feats_1d.shape[1], 32, -1)
-        uplifted_feats = self.uplift3d(feats_2d)
-        uplifted_feats = uplifted_feats.view(batch_size, uplifted_feats.shape[2], 32, 32, -1)
-
-        feats_3d = self.inv_transform_3d(uplifted_feats)
-        scene = feats_3d.view(batch_size, 32, 32, 32, -1)
-        return self.spherical_mask(scene)
-
-    def render(self, scene):
-        batch_size = scene.shape[0]
-        features_3d = self.transform_3d(scene)
-        features_3d = features_3d.view(batch_size, 32, 32, 32, -1)
-        batch_size, channels, depth, height, width = features_3d.shape
-        # Reshape 3D -> 2D
-        features_2d = features_3d.view(batch_size, channels * depth, height, width)
-        # features_2d = self.transform_2d(features_2d)
-        features_2d = self.transform_2d(features_2d)
-        features_2d = features_2d.view(batch_size, 1, 128, 128)
-        features_2d = self.final_render(features_2d)
-        return torch.sigmoid(features_2d)
+        print("Number of parameters: {}\n".format(count_parameters(self)))
 
 
 def load_model(filename):
