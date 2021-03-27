@@ -39,6 +39,8 @@ class Trainer:
         elif self.rendering_loss_type == 'l2':
             self.loss_func = nn.MSELoss()
 
+        self.scene_feature_loss = nn.L1Loss()
+
         # For SSIM
         if self.use_ssim:
             self.ssim_loss_func = SSIM(data_range=1.0, size_average=True,
@@ -159,9 +161,9 @@ class Trainer:
                 misc.dataloaders.SceneRenderDataset instance.
         """
         imgs, rendered, scenes, scenes_rotated = self.model(batch)
-        self._optimizer_step(imgs, rendered)
+        self._optimizer_step(imgs, rendered, scenes, scenes_rotated)
 
-    def _optimizer_step(self, imgs, rendered):
+    def _optimizer_step(self, imgs, rendered, scenes, scenes_rotated):
         """Updates weights of neural renderer.
 
         Args:
@@ -173,6 +175,8 @@ class Trainer:
         self.optimizer.zero_grad()
 
         loss_regression = self.loss_func(rendered, imgs)
+        loss_regression = loss_regression + self.scene_feature_loss(scenes, scenes_rotated)
+
         if self.use_ssim:
             # We want to maximize SSIM, i.e. minimize -SSIM
             loss_ssim = 1. - self.ssim_loss_func(rendered, imgs)

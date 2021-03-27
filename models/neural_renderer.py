@@ -305,8 +305,8 @@ class TransformerRenderer(NeuralRenderer):
             dim=1024,
             transformer=Nystromer(
                 dim=1024,
-                depth=2,
-                heads=8,
+                depth=1,
+                heads=1,
                 num_landmarks=256,
             ).cuda()
         )
@@ -321,8 +321,8 @@ class TransformerRenderer(NeuralRenderer):
             patch_size=1, # config["patch_size_3d"],
             transformer=Nystromer(
                 dim=output_size * 2,
-                depth=2,
-                heads=8,
+                depth=1,
+                heads=1,
                 num_landmarks=256,
             ).cuda(),
             dim=output_size * 2
@@ -341,8 +341,8 @@ class TransformerRenderer(NeuralRenderer):
             channels=output_size * 2,
             transformer=Nystromer(
                 dim=output_size,
-                depth=2,
-                heads=8,
+                depth=1,
+                heads=1,
                 num_landmarks=256,
             ).cuda(),
             dim=output_size
@@ -360,8 +360,8 @@ class TransformerRenderer(NeuralRenderer):
             channels=output_size * output_size,
             transformer=Nystromer(
                 dim=256,
-                depth=2,
-                heads=8,
+                depth=1,
+                heads=1,
                 num_landmarks=256,
             ).cuda(),
             dim=256
