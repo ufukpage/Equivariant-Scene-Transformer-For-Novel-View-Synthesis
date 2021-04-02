@@ -267,7 +267,8 @@ class NeuralRenderer(nn.Module):
 
 
 # from models.transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
-from models.vision_transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
+from models.vision_transformers import ViTransformer2DEncoder, ViTransformer3DEncoder, ViTransformer2DEncoderWrapper, \
+    ViTransformer3DEncoderWrapper
 from x_transformers import Encoder
 from nystrom_attention import Nystromer
 from einops.layers.torch import Rearrange
@@ -287,7 +288,7 @@ class TransformerRenderer(NeuralRenderer):
             transformer=Nystromer(
                 dim=128,
                 depth=1,
-                heads=1,
+                heads=8,
                 num_landmarks=256,
             ).cuda(),
             dim=128
@@ -306,7 +307,7 @@ class TransformerRenderer(NeuralRenderer):
             transformer=Nystromer(
                 dim=1024,
                 depth=1,
-                heads=1,
+                heads=8,
                 num_landmarks=256,
             ).cuda()
         )
@@ -322,7 +323,7 @@ class TransformerRenderer(NeuralRenderer):
             transformer=Nystromer(
                 dim=output_size * 2,
                 depth=1,
-                heads=1,
+                heads=8,
                 num_landmarks=256,
             ).cuda(),
             dim=output_size * 2
@@ -342,7 +343,7 @@ class TransformerRenderer(NeuralRenderer):
             transformer=Nystromer(
                 dim=output_size,
                 depth=1,
-                heads=1,
+                heads=8,
                 num_landmarks=256,
             ).cuda(),
             dim=output_size
@@ -361,7 +362,7 @@ class TransformerRenderer(NeuralRenderer):
             transformer=Nystromer(
                 dim=256,
                 depth=1,
-                heads=1,
+                heads=8,
                 num_landmarks=256,
             ).cuda(),
             dim=256
@@ -371,6 +372,104 @@ class TransformerRenderer(NeuralRenderer):
                                         self.projection_transformer,
                                         Rearrange('b (p1 p2) c -> b c p1 p2', p1=output_size, p2=output_size)
                                         )
+
+    def print_model_info(self):
+        print("Number of parameters: {}\n".format(count_parameters(self)))
+
+
+class SimpleTransformerRenderer(NeuralRenderer):
+    def __init__(self, config):
+        super(SimpleTransformerRenderer, self).__init__(img_shape=config["img_shape"], channels_2d=config["channels_2d"],
+                                                  strides_2d=config["strides_2d"],channels_3d=config["channels_3d"],
+                                                  strides_3d=config["strides_3d"],
+                                                  num_channels_inv_projection=config["num_channels_inv_projection"],
+                                                  num_channels_projection=config["num_channels_projection"],
+                                                  mode=config["mode"])
+        self.inv_transform_2d = ViTransformer2DEncoderWrapper(
+            image_size=config["img_shape"][1],
+            patch_size=config["patch_size_2d"],
+            attn_layers=Encoder(
+                dim=1024,
+                depth=1,
+                heads=8,
+                ff_glu=True,
+                rel_pos_bias=True,
+                use_scalenorm=True
+            )
+        )
+
+        self.rotation_layer = Rotate3d(self.mode)
+        self.inv_transform_3d = ViTransformer3DEncoderWrapper(
+            volume_size=32,
+            patch_size=config["patch_size_3d"],
+            attn_layers=Encoder(
+                dim=2048,
+                depth=1,
+                heads=8,
+                ff_glu=True,
+                rel_pos_bias=True,
+                use_scalenorm = True
+            )
+        )
+
+        self.transform_3d = ViTransformer3DEncoderWrapper(
+            volume_size=32,
+            patch_size=config["patch_size_3d"],
+            attn_layers=Encoder(
+                dim=2048,
+                depth=1,
+                heads=8,
+                ff_glu=True,
+                rel_pos_bias=True,
+                use_scalenorm=True
+            )
+        )
+
+        self.transform_2d = ViTransformer2DEncoderWrapper(
+            image_size=32,
+            patch_size=8,
+            channel_size=32*32,
+            attn_layers=Encoder(
+                dim=1024,
+                depth=1,
+                heads=8,
+                ff_glu=True,
+                rel_pos_bias=True,
+                use_scalenorm=True
+            )
+        )
+        # uplift3d = nn.Linear(1024, 1024)
+        self.uplift3d = nn.Conv2d(256, 1024, kernel_size=1)
+        self.final_render = nn.Conv2d(1, 3, kernel_size=1)
+        self.spherical_mask = SphericalMask((32, 32, 32, 32))
+
+    def print_model_info(self):
+        pass
+
+    def inverse_render(self, img):
+        batch_size = img.shape[0]
+        feats_1d = self.inv_transform_2d(img)  # (1, 1000)
+
+        feats_2d = feats_1d.view(batch_size, feats_1d.shape[1], 32, -1)
+        # uplifted_feats = self.uplift3d(feats_2d)
+        uplifted_feats = feats_2d.view(batch_size, feats_2d.shape[2], 32, 32, -1)
+
+        feats_3d = self.inv_transform_3d(uplifted_feats)
+        scene = feats_3d.view(batch_size, 32, 32, 32, -1)
+        return self.spherical_mask(scene)
+
+    def render(self, scene):
+        batch_size = scene.shape[0]
+        features_3d = self.transform_3d(scene)
+        features_3d = features_3d.view(batch_size, 32, 32, 32, -1)
+        batch_size, channels, depth, height, width = features_3d.shape
+        # Reshape 3D -> 2D
+        features_2d = features_3d.view(batch_size, channels * depth, height, width)
+        # features_2d = self.transform_2d(features_2d)
+        features_2d = self.transform_2d(features_2d)
+        features_2d = features_2d.view(batch_size, 1, 128, 128)
+        features_2d = self.final_render(features_2d)
+        return torch.sigmoid(features_2d)
 
     def print_model_info(self):
         print("Number of parameters: {}\n".format(count_parameters(self)))

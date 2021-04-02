@@ -175,7 +175,7 @@ class Trainer:
         self.optimizer.zero_grad()
 
         loss_regression = self.loss_func(rendered, imgs)
-        loss_regression = loss_regression + self.scene_feature_loss(scenes, scenes_rotated)
+        # loss_regression = loss_regression + self.scene_feature_loss(scenes, scenes_rotated)
 
         if self.use_ssim:
             # We want to maximize SSIM, i.e. minimize -SSIM

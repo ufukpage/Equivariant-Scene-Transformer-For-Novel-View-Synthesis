@@ -4,7 +4,7 @@ import sys
 import time
 import torch
 from misc.dataloaders import scene_render_dataloader
-from models.neural_renderer import NeuralRenderer, TransformerRenderer
+from models.neural_renderer import NeuralRenderer, TransformerRenderer, SimpleTransformerRenderer
 from models.vision_transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
 from training.training import Trainer
 
@@ -83,7 +83,7 @@ if "__main__" == __name__:
         json.dump(config, file)
 
     # Set up renderer
-    if 0:
+    if config["model_name"] == "neq":
         model = NeuralRenderer(
             img_shape=config["img_shape"],
             channels_2d=config["channels_2d"],
@@ -94,9 +94,14 @@ if "__main__" == __name__:
             num_channels_projection=config["num_channels_projection"],
             mode=config["mode"]
         )
-    else:
+    elif config["model_name"] == "t":
         # Set up renderer
         model = TransformerRenderer(
+            config
+        )
+    else:
+        # Set up renderer
+        model = SimpleTransformerRenderer(
             config
         )
 
