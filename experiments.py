@@ -62,7 +62,7 @@ if "__main__" == __name__:
         exit(0)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+    print(device)
     # Get path to data from command line arguments
     if len(sys.argv) != 2:
         raise(RuntimeError("Wrong arguments, use python experiments.py <config>"))
@@ -115,7 +115,7 @@ if "__main__" == __name__:
     # Set up trainer for renderer
     trainer = Trainer(device, model, lr=config["lr"],
                       rendering_loss_type=config["loss_type"],
-                      ssim_loss_weight=config["ssim_loss_weight"])
+                      ssim_loss_weight=config["ssim_loss_weight"], feature_loss=config["feature_loss"])
 
     dataloader = scene_render_dataloader(path_to_data=config["path_to_data"],
                                          batch_size=config["batch_size"],

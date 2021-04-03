@@ -17,7 +17,7 @@ class Trainer:
         ssim_loss_weight (float): Weight assigned to SSIM loss.
     """
     def __init__(self, device, model, lr=2e-4, rendering_loss_type='l1',
-                 ssim_loss_weight=0.05):
+                 ssim_loss_weight=0.05, feature_loss=False):
         self.device = device
         self.model = model
         self.lr = lr
@@ -38,7 +38,7 @@ class Trainer:
             self.loss_func = nn.L1Loss()
         elif self.rendering_loss_type == 'l2':
             self.loss_func = nn.MSELoss()
-
+        self.feature_loss = feature_loss
         self.scene_feature_loss = nn.L1Loss()
 
         # For SSIM
@@ -175,7 +175,8 @@ class Trainer:
         self.optimizer.zero_grad()
 
         loss_regression = self.loss_func(rendered, imgs)
-        # loss_regression = loss_regression + self.scene_feature_loss(scenes, scenes_rotated)
+        if self.feature_loss:
+            loss_regression = loss_regression + self.scene_feature_loss(scenes, scenes_rotated)
 
         if self.use_ssim:
             # We want to maximize SSIM, i.e. minimize -SSIM
@@ -240,6 +241,8 @@ def mean_dataset_loss(trainer, dataloader):
             # Update losses
             # Use _loss_func here and not _loss_renderer since we only want regression term
             current_regression_loss = trainer.loss_func(rendered, imgs).item()
+            if trainer.feature_loss:
+                current_regression_loss = current_regression_loss + trainer.scene_feature_loss(scenes, scenes_rotated).item()
             if trainer.use_ssim:
                 current_ssim_loss = 1. - trainer.ssim_loss_func(rendered, imgs).item()
             else:
