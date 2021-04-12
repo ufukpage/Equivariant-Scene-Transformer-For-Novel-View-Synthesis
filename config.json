@@ -21,5 +21,6 @@
   "mode": "bilinear",
   "patch_size_2d": 4,
   "patch_sizes": [4, 1, 1, 1, 1, 4],
-  "heads": [1, 1, 1, 1, 1, 1]
+  "heads": [1, 1, 1, 1, 1, 1],
+  "resume_epoch": 1
 }

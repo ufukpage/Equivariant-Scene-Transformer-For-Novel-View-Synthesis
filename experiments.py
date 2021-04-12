@@ -74,7 +74,7 @@ if "__main__" == __name__:
         raise(RuntimeError("Wrong arguments, use python experiments.py <config>"))
     path_to_config = sys.argv[1]
 
-    load_path = sys.argv[2] if len(sys.argv) >= 3 else None # config.json ./2021-04-01_23-32_chairs-experiment/model.pt
+    load_path = sys.argv[2] if len(sys.argv) >= 3 else None # config.json ./2021-04-01_23-32_chairs-experiment/model.pt 2021-04-12_00-20_chairs-experiment
 
     # Open config file
     with open(path_to_config) as file:
@@ -147,7 +147,8 @@ if "__main__" == __name__:
 
     # Train renderer, save generated images, losses and model
     trainer.train(dataloader, config["epochs"], save_dir=directory,
-                  save_freq=config["save_freq"], test_dataloader=test_dataloader)
+                  save_freq=config["save_freq"], test_dataloader=test_dataloader, load_path=load_path,
+                  resume_epoch=config["resume_epoch"])
 
     # Print best losses
     print("Model id: {}".format(config["id"]))

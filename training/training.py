@@ -53,7 +53,7 @@ class Trainer:
         self.val_loss_history = {loss_type: [] for loss_type in self.recorded_losses}
 
     def train(self, dataloader, epochs, save_dir=None, save_freq=1,
-              test_dataloader=None):
+              test_dataloader=None, load_path=None, resume_epoch=None):
         """Trains a neural renderer model on the given dataloader.
 
         Args:
@@ -66,8 +66,19 @@ class Trainer:
             save_freq (int): Frequency with which to save model.
             test_dataloader (torch.utils.DataLoader or None): If not None, will
                 test model on this dataset after every epoch.
+            base_model (models.neural_renderer.NeuralRenderer): resume to train.
+
         """
         if save_dir is not None:
+            # Save model after training
+            base_experiment_name = load_path.split("/")[1]
+            if load_path is not None:
+                if self.multi_gpu:
+                    self.model.module.save(save_dir + "/"+base_experiment_name+"_base_model.pt")
+                else:
+                    self.model.save(save_dir + "/"+base_experiment_name+"_base_model.pt")
+            if resume_epoch:
+                print("Resuming epoch:", resume_epoch+1)
             # Extract one batch of data
             for batch in dataloader:
                 break
@@ -81,6 +92,7 @@ class Trainer:
                        save_dir + "/imgs_gen_{}.png".format(str(0).zfill(3)), nrow=4)
 
         for epoch in range(epochs):
+            epoch = epoch + resume_epoch if resume_epoch is not None else epoch
             print("\nEpoch {}".format(epoch + 1))
             self._train_epoch(dataloader)
             # Update epoch loss history with mean loss over epoch

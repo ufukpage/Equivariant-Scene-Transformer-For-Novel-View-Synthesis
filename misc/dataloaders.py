@@ -28,7 +28,7 @@ def scene_render_dataloader(path_to_data='chairs-train', batch_size=16,
 
     sampler = RandomPairSampler(dataset)
 
-    return DataLoader(dataset, batch_size=batch_size, sampler=sampler,
+    return DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=2,
                       drop_last=True)
 
 
