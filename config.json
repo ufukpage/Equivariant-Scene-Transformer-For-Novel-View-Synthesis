@@ -1,11 +1,12 @@
 {
   "id": "chairs-experiment",
-  "model_name": "neq",
+  "model_name": "t",
   "path_to_data": "D:\\chairs\\chairs\\chairs-train\\chairs-train",
   "path_to_test_data": "D:\\chairs\\chairs\\chairs-val\\chairs-val-50",
   "multi_gpu": false,
+  "feature_loss": false,
   "batch_size": 2,
-  "lr": 2e-4,
+  "lr": 8e-5,
   "epochs": 100,
   "loss_type": "l1",
   "ssim_loss_weight": 0.05,
@@ -19,5 +20,6 @@
   "num_channels_inv_projection": [256, 512, 1024],
   "mode": "bilinear",
   "patch_size_2d": 4,
-  "patch_size_3d": 4
+  "patch_sizes": [4, 1, 1, 1, 1, 4],
+  "heads": [1, 1, 1, 1, 1, 1]
 }

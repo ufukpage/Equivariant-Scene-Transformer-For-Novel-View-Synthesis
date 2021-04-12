@@ -53,7 +53,7 @@ class ViTransformer2DEncoder(nn.Module):
 
         num_patches = (image_size // patch_size) ** 2
         patch_dim = channels * patch_size ** 2
-        self.patch_to_embedding = nn.Linear(patch_dim, dim)
+        self.patch_to_embedding = nn.Linear(patch_dim, dim) if use_embeddings else None
         self.patch_size = patch_size
         # self.pia_pos_emb = Fixed3DPositionalEmbedding(dim)
         self.transformer = transformer
@@ -66,8 +66,8 @@ class ViTransformer2DEncoder(nn.Module):
         p = self.patch_size
 
         x = rearrange(img, 'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1=p, p2=p)
-        # if self.use_embeddings:
-        x = self.patch_to_embedding(x)
+        if self.use_embeddings:
+            x = self.patch_to_embedding(x)
         b, n, _ = x.shape
 
         x += self.pos_embedding[:, :n]
@@ -195,74 +195,3 @@ class ViTransformer3DEncoderWrapper(ViTransformerWrapper):
 
 
 from x_transformers import ViTransformerWrapper
-
-
-class ViTransformer2DEncoderWrapper(ViTransformerWrapper):
-    def __init__(
-        self,
-        image_size,
-        patch_size,
-        attn_layers,
-        emb_dropout=0.,
-        channel_size=3
-    ):
-        super(ViTransformer2DEncoderWrapper, self).__init__(image_size=image_size, patch_size=patch_size,
-                                                     attn_layers=attn_layers, emb_dropout=emb_dropout)
-        dim = attn_layers.dim
-        num_patches = (image_size // patch_size) ** 2
-        patch_dim = channel_size * patch_size ** 2
-        self.patch_to_embedding = nn.Linear(patch_dim, dim)
-        self.patch_size = patch_size
-        # self.pia_pos_emb = Fixed3DPositionalEmbedding(dim)
-
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches, dim))
-
-    def forward(self, img):
-        p = self.patch_size
-
-        x = rearrange(img, 'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1=p, p2=p)
-        x = self.patch_to_embedding(x)
-        b, n, _ = x.shape
-
-        x += self.pos_embedding[:, :(n)]
-        x = self.dropout(x)
-
-        x = self.attn_layers(x)
-        x = self.norm(x)
-
-        return x
-
-
-class ViTransformer3DEncoderWrapper(ViTransformerWrapper):
-    def __init__(
-        self,
-        volume_size,
-        patch_size,
-        attn_layers,
-        emb_dropout=0.,
-        use_embeddings=True
-    ):
-        super(ViTransformer3DEncoderWrapper, self).__init__(image_size=volume_size, patch_size=patch_size,
-                                                     attn_layers=attn_layers, emb_dropout=emb_dropout)
-        dim = attn_layers.dim
-        num_patches = (volume_size // patch_size) ** 3
-        patch_dim = volume_size * patch_size ** 3
-        self.patch_to_embedding = nn.Linear(patch_dim, dim)
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches, dim))
-        self.use_embeddings = use_embeddings
-
-    def forward(self, img):
-        p = self.patch_size
-
-        x = rearrange(img, 'b c (h p1) (w p2) (d p3)-> b (h w d) (p1 p2 p3 c)', p1=p, p2=p, p3=p)
-        if self.use_embeddings:
-            x = self.patch_to_embedding(x)
-        b, n, _ = x.shape
-
-        x += self.pos_embedding[:, :(n + 1)]
-        x = self.dropout(x)
-
-        x = self.attn_layers(x)
-        x = self.norm(x)
-
-        return x

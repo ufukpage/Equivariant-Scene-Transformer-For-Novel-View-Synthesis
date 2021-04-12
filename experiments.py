@@ -11,6 +11,12 @@ from training.training import Trainer
 if "__main__" == __name__:
     test_transformer = 0
     if test_transformer:
+        model_dict = torch.load("./2021-03-22_21-42_chairs-experiment/model.pt", map_location="cpu")
+        config = model_dict["config"]
+        # print(model_dict["state_dict"])
+        for param_tensor in model_dict["state_dict"]:
+            print(param_tensor, "\t", model_dict["state_dict"][param_tensor].size())
+        exit(1)
         from nystrom_attention import Nystromformer
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -64,9 +70,11 @@ if "__main__" == __name__:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     # Get path to data from command line arguments
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2:
         raise(RuntimeError("Wrong arguments, use python experiments.py <config>"))
     path_to_config = sys.argv[1]
+
+    load_path = sys.argv[2] if len(sys.argv) >= 3 else None # config.json ./2021-04-01_23-32_chairs-experiment/model.pt
 
     # Open config file
     with open(path_to_config) as file:
@@ -107,6 +115,10 @@ if "__main__" == __name__:
 
     model.print_model_info()
 
+    if load_path:
+        # from models.neural_renderer import load_model
+        print("load path:", load_path)
+        model = model.load_model(load_path)
     model = model.to(device)
 
     if config["multi_gpu"]:

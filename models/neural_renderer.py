@@ -5,6 +5,17 @@ from models.submodels import ResNet2d, ResNet3d, Projection, InverseProjection
 from models.rotation_layers import SphericalMask, Rotate3d
 
 
+class View(nn.Module):
+
+    def __init__(self, shape):
+        super(View, self).__init__()
+        self.shape = shape
+
+    def forward(self, input):
+        batch_size = input.size(0)
+        return input.view(batch_size, *self.shape)
+
+
 from timesformer_pytorch import TimeSformer
 class NeuralRenderer(nn.Module):
     """Implements a Neural Renderer with an implicit scene representation that
@@ -265,6 +276,30 @@ class NeuralRenderer(nn.Module):
             "state_dict": self.state_dict()
         }, filename)
 
+    @staticmethod
+    def load_model(filename):
+        """Loads a NeuralRenderer model from saved model config and weights.
+
+        Args:
+            filename (string): Path where model was saved.
+        """
+        model_dict = torch.load(filename, map_location="cpu")
+        config = model_dict["config"]
+        # Initialize a model based on config
+        model = NeuralRenderer(
+            img_shape=config["img_shape"],
+            channels_2d=config["channels_2d"],
+            strides_2d=config["strides_2d"],
+            channels_3d=config["channels_3d"],
+            strides_3d=config["strides_3d"],
+            num_channels_inv_projection=config["num_channels_inv_projection"],
+            num_channels_projection=config["num_channels_projection"],
+            mode=config["mode"]
+        )
+        # Load weights into model
+        model.load_state_dict(model_dict["state_dict"])
+        return model
+
 
 # from models.transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
 from models.vision_transformers import ViTransformer2DEncoder, ViTransformer3DEncoder, ViTransformer2DEncoderWrapper, \
@@ -282,18 +317,19 @@ class TransformerRenderer(NeuralRenderer):
                                                   num_channels_inv_projection=config["num_channels_inv_projection"],
                                                   num_channels_projection=config["num_channels_projection"],
                                                   mode=config["mode"])
+        self.config = config
         self.inv_transformer_2d = ViTransformer2DEncoder(
             image_size=config["img_shape"][1],
-            patch_size=config["patch_size_2d"],
+            patch_size=config["patch_sizes"][0],
             transformer=Nystromer(
                 dim=128,
                 depth=1,
-                heads=8,
+                heads=config["heads"][0],
                 num_landmarks=256,
-            ).cuda(),
+            ),
             dim=128
         )
-        output_size = config["img_shape"][1]//config["patch_size_2d"]
+        output_size = config["img_shape"][1]//config["patch_sizes"][0]
         self.inv_transform_2d = nn.Sequential(
                                 self.inv_transformer_2d,
                                 Rearrange('b (p1 p2) c -> b c p1 p2', p1=output_size, p2=output_size)
@@ -301,31 +337,31 @@ class TransformerRenderer(NeuralRenderer):
 
         self.inv_projection_transformer = ViTransformer2DEncoder(
             image_size=output_size,
-            patch_size=1, #config["patch_size_2d"],
+            patch_size=config["patch_sizes"][1],
             channels=128,
             dim=1024,
             transformer=Nystromer(
                 dim=1024,
                 depth=1,
-                heads=8,
-                num_landmarks=256,
-            ).cuda()
+                heads=config["heads"][1]
+            )
         )
 
         self.inv_projection = nn.Sequential(
                                 self.inv_projection_transformer,
                                 Rearrange('b (p p2) (d p1) -> b d p1 p p2', p1=output_size, p2=output_size)
+                                # View([32, 32, 32, 32])
                             )
 
         self.inv_transformer_3d = ViTransformer3DEncoder(
             volume_size=output_size,
-            patch_size=1, # config["patch_size_3d"],
+            patch_size=config["patch_sizes"][2], # config["patch_size_3d"],
             transformer=Nystromer(
                 dim=output_size * 2,
                 depth=1,
-                heads=8,
+                heads=config["heads"][2],
                 num_landmarks=256,
-            ).cuda(),
+            ),
             dim=output_size * 2
         )
         self.inv_transform_3d = nn.Sequential(
@@ -338,14 +374,14 @@ class TransformerRenderer(NeuralRenderer):
 
         self.transformer_3d = ViTransformer3DEncoder(
             volume_size=output_size,
-            patch_size=1,
+            patch_size=config["patch_sizes"][3],
             channels=output_size * 2,
             transformer=Nystromer(
                 dim=output_size,
                 depth=1,
-                heads=8,
+                heads=config["heads"][3],
                 num_landmarks=256,
-            ).cuda(),
+            ),
             dim=output_size
         )
 
@@ -357,14 +393,14 @@ class TransformerRenderer(NeuralRenderer):
 
         self.projection_transformer = ViTransformer2DEncoder(
             image_size=output_size,
-            patch_size=1,
+            patch_size=config["patch_sizes"][4],
             channels=output_size * output_size,
             transformer=Nystromer(
                 dim=256,
                 depth=1,
-                heads=8,
+                heads=config["heads"][4],
                 num_landmarks=256,
-            ).cuda(),
+            ),
             dim=256
         )
 
@@ -373,8 +409,47 @@ class TransformerRenderer(NeuralRenderer):
                                         Rearrange('b (p1 p2) c -> b c p1 p2', p1=output_size, p2=output_size)
                                         )
 
+        self.transformer_2d = ViTransformer2DEncoder(
+            image_size=output_size,
+            patch_size=config["patch_sizes"][5],
+            channels=256,
+            transformer=Nystromer(
+                dim=1024,
+                depth=1,
+                heads=config["heads"][5]
+            ),
+            dim=1024,
+            # use_embeddings=False
+        )
+
+        self.transform_2d = nn.Sequential(
+                                        self.transformer_2d,
+                                        # Rearrange('b (p1 p2) c -> b c p1 p2', p1=config["img_shape"][1], p2=config["img_shape"][2]),
+                                        View([4, config["img_shape"][1], config["img_shape"][2]]),
+                                        nn.Conv2d(4, 3, 1)
+                                        )
+
     def print_model_info(self):
         print("Number of parameters: {}\n".format(count_parameters(self)))
+
+    def get_model_config(self):
+        """Returns the complete model configuration as a dict."""
+        return self.config
+
+    @staticmethod
+    def load_model(filename):
+        """Loads a NeuralRenderer model from saved model config and weights.
+
+        Args:
+            filename (string): Path where model was saved.
+        """
+        model_dict = torch.load(filename, map_location="cpu")
+        config = model_dict["config"]
+        # Initialize a model based on config
+        model = TransformerRenderer(config)
+        # Load weights into model
+        model.load_state_dict(model_dict["state_dict"])
+        return model
 
 
 class SimpleTransformerRenderer(NeuralRenderer):
@@ -408,7 +483,7 @@ class SimpleTransformerRenderer(NeuralRenderer):
                 heads=8,
                 ff_glu=True,
                 rel_pos_bias=True,
-                use_scalenorm = True
+                use_scalenorm=True
             )
         )
 
@@ -474,103 +549,24 @@ class SimpleTransformerRenderer(NeuralRenderer):
     def print_model_info(self):
         print("Number of parameters: {}\n".format(count_parameters(self)))
 
+    def get_model_config(self):
+        """Returns the complete model configuration as a dict."""
+        return self.config
 
-class SimpleTransformerRenderer(NeuralRenderer):
-    def __init__(self, config):
-        super(SimpleTransformerRenderer, self).__init__(img_shape=config["img_shape"], channels_2d=config["channels_2d"],
-                                                  strides_2d=config["strides_2d"],channels_3d=config["channels_3d"],
-                                                  strides_3d=config["strides_3d"],
-                                                  num_channels_inv_projection=config["num_channels_inv_projection"],
-                                                  num_channels_projection=config["num_channels_projection"],
-                                                  mode=config["mode"])
-        self.inv_transform_2d = ViTransformer2DEncoderWrapper(
-            image_size=config["img_shape"][1],
-            patch_size=config["patch_size_2d"],
-            attn_layers=Encoder(
-                dim=1024,
-                depth=1,
-                heads=4,
-                ff_glu=True,
-                rel_pos_bias=True,
-                # use_scalenorm=True
-            )
-        )
+    @staticmethod
+    def load_model(filename):
+        """Loads a NeuralRenderer model from saved model config and weights.
 
-        self.rotation_layer = Rotate3d(self.mode)
-        self.inv_transform_3d = ViTransformer3DEncoderWrapper(
-            volume_size=32,
-            patch_size=config["patch_size_3d"],
-            attn_layers=Encoder(
-                dim=2048,
-                depth=1,
-                heads=8,
-                ff_glu=True,
-                rel_pos_bias=True,
-                # use_scalenorm = True
-            )
-        )
-
-        self.transform_3d = ViTransformer3DEncoderWrapper(
-            volume_size=32,
-            patch_size=config["patch_size_3d"],
-            attn_layers=Encoder(
-                dim=2048,
-                depth=1,
-                heads=8,
-                ff_glu=True,
-                rel_pos_bias=True,
-                # use_scalenorm=True
-            )
-        )
-
-        self.transform_2d = ViTransformer2DEncoderWrapper(
-            image_size=32,
-            patch_size=8,
-            channel_size=32*32,
-            attn_layers=Encoder(
-                dim=1024,
-                depth=1,
-                heads=4,
-                ff_glu=True,
-                rel_pos_bias=True,
-                # use_scalenorm=True
-            )
-        )
-        # uplift3d = nn.Linear(1024, 1024)
-        # self.uplift3d = nn.Conv2d(256, 1024, kernel_size=1)
-        self.final_render = nn.Conv2d(1, 3, kernel_size=1)
-        self.spherical_mask = SphericalMask((32, 32, 32, 32))
-
-    def print_model_info(self):
-        pass
-
-    def inverse_render(self, img):
-        batch_size = img.shape[0]
-        feats_1d = self.inv_transform_2d(img)  # (1, 1000)
-
-        feats_2d = feats_1d.view(batch_size, feats_1d.shape[1], 32, -1)
-        # feats_2d = self.uplift3d(feats_2d)
-        uplifted_feats = feats_2d.view(batch_size, feats_2d.shape[2], 32, 32, -1)
-
-        feats_3d = self.inv_transform_3d(uplifted_feats)
-        scene = feats_3d.view(batch_size, 32, 32, 32, -1)
-        return self.spherical_mask(scene)
-
-    def render(self, scene):
-        batch_size = scene.shape[0]
-        features_3d = self.transform_3d(scene)
-        features_3d = features_3d.view(batch_size, 32, 32, 32, -1)
-        batch_size, channels, depth, height, width = features_3d.shape
-        # Reshape 3D -> 2D
-        features_2d = features_3d.view(batch_size, channels * depth, height, width)
-        # features_2d = self.transform_2d(features_2d)
-        features_2d = self.transform_2d(features_2d)
-        features_2d = features_2d.view(batch_size, 1, 128, 128)
-        features_2d = self.final_render(features_2d)
-        return torch.sigmoid(features_2d)
-
-    def print_model_info(self):
-        print("Number of parameters: {}\n".format(count_parameters(self)))
+        Args:
+            filename (string): Path where model was saved.
+        """
+        model_dict = torch.load(filename, map_location="cpu")
+        config = model_dict["config"]
+        # Initialize a model based on config
+        model = SimpleTransformerRenderer(config)
+        # Load weights into model
+        model.load_state_dict(model_dict["state_dict"])
+        return model
 
 
 def load_model(filename):
