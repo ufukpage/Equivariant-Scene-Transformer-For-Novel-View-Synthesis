@@ -9,6 +9,7 @@ from vit_pytorch import ViT
 def exists(val):
     return val is not None
 
+
 class Fixed2DPositionalEmbedding(nn.Module):
     def __init__(self, dim):
         super(Fixed2DPositionalEmbedding, self).__init__()

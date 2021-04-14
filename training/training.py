@@ -71,8 +71,9 @@ class Trainer:
         """
         if save_dir is not None:
             # Save model after training
-            base_experiment_name = load_path.split("/")[1]
+
             if load_path is not None:
+                base_experiment_name = load_path.split("/")[1]
                 if self.multi_gpu:
                     self.model.module.save(save_dir + "/"+base_experiment_name+"_base_model.pt")
                 else:

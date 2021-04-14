@@ -452,6 +452,55 @@ class TransformerRenderer(NeuralRenderer):
         return model
 
 
+from models.vivit import DeViT
+
+
+class TransformerRendererV2(TransformerRenderer):
+    def __init__(self, config):
+        super(TransformerRenderer, self).__init__(img_shape=config["img_shape"], channels_2d=config["channels_2d"],
+                                                  strides_2d=config["strides_2d"],channels_3d=config["channels_3d"],
+                                                  strides_3d=config["strides_3d"],
+                                                  num_channels_inv_projection=config["num_channels_inv_projection"],
+                                                  num_channels_projection=config["num_channels_projection"],
+                                                  mode=config["mode"])
+
+        output_size = config["img_shape"][1]//config["patch_sizes"][0]
+
+        self.inv_transformer_3d = DeViT(volume_size=output_size, patch_size=config["patch_sizes"][2],
+                                        depth_size=output_size, depth=1, in_channels=output_size,
+                                        heads=config["heads"][2], dim=output_size * 2)
+
+        self.inv_transform_3d = nn.Sequential(
+                                self.inv_transformer_3d,
+                                Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
+                                          c=output_size*2)
+                            )
+
+        self.transformer_3d = DeViT(volume_size=output_size, patch_size=config["patch_sizes"][3],
+                                    depth_size=output_size, depth=1, in_channels=output_size*2,
+                                    heads=config["heads"][3], dim=output_size)
+
+        self.transform_3d = nn.Sequential(
+                                self.transformer_3d,
+                                Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
+                                          c=output_size)
+                            )
+
+    @staticmethod
+    def load_model(filename):
+        """Loads a NeuralRenderer model from saved model config and weights.
+
+        Args:
+            filename (string): Path where model was saved.
+        """
+        model_dict = torch.load(filename, map_location="cpu")
+        config = model_dict["config"]
+        # Initialize a model based on config
+        model = TransformerRendererV2(config)
+        # Load weights into model
+        model.load_state_dict(model_dict["state_dict"])
+        return model
+
 class SimpleTransformerRenderer(NeuralRenderer):
     def __init__(self, config):
         super(SimpleTransformerRenderer, self).__init__(img_shape=config["img_shape"], channels_2d=config["channels_2d"],
