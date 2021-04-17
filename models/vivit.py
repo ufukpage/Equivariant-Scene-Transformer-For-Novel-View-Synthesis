@@ -5,6 +5,7 @@ from einops.layers.torch import Rearrange
 from models.module import Attention, PreNorm, FeedForward
 import numpy as np
 
+# from hamburger_pytorch import Hamburger
 
 class Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
@@ -31,8 +32,6 @@ class ViViT(nn.Module):
         super(ViViT, self).__init__()
         
         assert pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
-
-
         assert image_size % patch_size == 0, 'Image dimensions must be divisible by the patch size.'
         num_patches = (image_size // patch_size) ** 2
         patch_dim = in_channels * patch_size ** 2
@@ -89,10 +88,8 @@ class DeViT(nn.Module):
 
         num_patches = (volume_size // patch_size) ** 2
         patch_dim = in_channels * patch_size ** 2
-        self.to_patch_embedding = nn.Sequential(
-            Rearrange('b t c (h p1) (w p2) -> b t (h w) (p1 p2 c)', p1=patch_size, p2=patch_size),
-            nn.Linear(patch_dim, dim),
-        )
+        self.patch_size = patch_size
+        self.to_patch_embedding = nn.Linear(patch_dim, dim)
 
         self.pos_embedding = nn.Parameter(torch.randn(1, depth_size, num_patches, dim))
         self.space_transformer = Transformer(dim, depth, heads, dim_head, dim * scale_dim, dropout)
@@ -104,13 +101,14 @@ class DeViT(nn.Module):
         self.norm = nn.LayerNorm(dim)
 
     def forward(self, x):
+        x = rearrange(x, 'b c d (h p1) (w p2) -> b d (h w) (p1 p2 c)', p1=self.patch_size, p2=self.patch_size)
         x = self.to_patch_embedding(x)
-        b, t, n, _ = x.shape
+        b, d, n, _ = x.shape
 
-        x += self.pos_embedding[:, :, :(n + 1)]
+        x += self.pos_embedding[:, :, :(n + 1)]     # self.pos_embedding[:, :, :(n + 1)]
         x = self.dropout(x)
 
-        x = rearrange(x, 'b t n d -> (b t) n d')
+        x = rearrange(x, 'b de n d -> (b de) n d')
         x = self.space_transformer(x)
         # x = rearrange(x[:, 0], '(b t) ... -> b t ...', b=b)
 

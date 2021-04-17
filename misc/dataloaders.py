@@ -5,7 +5,7 @@ from numpy import float32 as np_float32
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader, Sampler
 from torchvision import transforms
-
+import os
 
 def scene_render_dataloader(path_to_data='chairs-train', batch_size=16,
                             img_size=(3, 128, 128), crop_size=128):
@@ -33,7 +33,7 @@ def scene_render_dataloader(path_to_data='chairs-train', batch_size=16,
 
 
 def scene_render_dataset(path_to_data='chairs-train', img_size=(3, 128, 128),
-                         crop_size=128, allow_odd_num_imgs=False):
+                         crop_size=128, allow_odd_num_imgs=False, get_img_data=False):
     """Helper function for creating a scene render dataset.
 
     Args:
@@ -53,7 +53,7 @@ def scene_render_dataset(path_to_data='chairs-train', img_size=(3, 128, 128),
 
     dataset = SceneRenderDataset(path_to_data=path_to_data,
                                  img_transform=img_transform,
-                                 allow_odd_num_imgs=allow_odd_num_imgs)
+                                 allow_odd_num_imgs=allow_odd_num_imgs, get_name=get_img_data)
 
     return dataset
 
@@ -77,11 +77,12 @@ class SceneRenderDataset(Dataset):
         - We assume angles are given in degrees.
     """
     def __init__(self, path_to_data='chairs-train', img_transform=None,
-                 allow_odd_num_imgs=False):
+                 allow_odd_num_imgs=False, get_name=False):
         self.path_to_data = path_to_data
         self.img_transform = img_transform
         self.allow_odd_num_imgs =  allow_odd_num_imgs
         self.data = []
+        self.get_name = get_name
         # Each folder contains a single scene with different rendering
         # parameters and views
         self.scene_paths = glob.glob(path_to_data + '/*')
@@ -141,7 +142,8 @@ class SceneRenderDataset(Dataset):
         data_item = {
             "img": img[:3],
             "scene_name": self.data[idx]["scene_name"],
-            "render_params": self.data[idx]["render_params"]
+            "render_params": self.data[idx]["render_params"],
+            "img_name": os.path.split(img_path)[1] if self.get_name else None
         }
 
         return data_item

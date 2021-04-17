@@ -16,7 +16,9 @@ class View(nn.Module):
         return input.view(batch_size, *self.shape)
 
 
-from timesformer_pytorch import TimeSformer
+# from timesformer_pytorch import TimeSformer ## Ilk faktorize edilenlerden biri
+
+
 class NeuralRenderer(nn.Module):
     """Implements a Neural Renderer with an implicit scene representation that
     allows both forward and inverse rendering.
@@ -300,7 +302,6 @@ class NeuralRenderer(nn.Module):
         model.load_state_dict(model_dict["state_dict"])
         return model
 
-
 # from models.transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
 from models.vision_transformers import ViTransformer2DEncoder, ViTransformer3DEncoder, ViTransformer2DEncoderWrapper, \
     ViTransformer3DEncoderWrapper
@@ -467,7 +468,7 @@ class TransformerRendererV2(TransformerRenderer):
         output_size = config["img_shape"][1]//config["patch_sizes"][0]
 
         self.inv_transformer_3d = DeViT(volume_size=output_size, patch_size=config["patch_sizes"][2],
-                                        depth_size=output_size, depth=1, in_channels=output_size,
+                                        depth_size=output_size, depth=1, in_channels=output_size, dim_head=output_size,
                                         heads=config["heads"][2], dim=output_size * 2)
 
         self.inv_transform_3d = nn.Sequential(
@@ -477,7 +478,7 @@ class TransformerRendererV2(TransformerRenderer):
                             )
 
         self.transformer_3d = DeViT(volume_size=output_size, patch_size=config["patch_sizes"][3],
-                                    depth_size=output_size, depth=1, in_channels=output_size*2,
+                                    depth_size=output_size, depth=1, in_channels=output_size*2, dim_head=output_size,
                                     heads=config["heads"][3], dim=output_size)
 
         self.transform_3d = nn.Sequential(

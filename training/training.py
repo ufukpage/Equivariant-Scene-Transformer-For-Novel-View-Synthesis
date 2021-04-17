@@ -91,6 +91,12 @@ class Trainer:
             rendered = self._render_fixed_img()
             save_image(rendered.cpu(),
                        save_dir + "/imgs_gen_{}.png".format(str(0).zfill(3)), nrow=4)
+            for batch in test_dataloader:
+                break
+            self.fixed_test_batch = batch
+            rendered = self._render_fixed_test_img()
+            save_image(rendered.cpu(),
+                       save_dir + "/imgs_test_gen_{}.png".format(str(0).zfill(3)), nrow=4)
 
         for epoch in range(epochs):
             epoch = epoch + resume_epoch if resume_epoch is not None else epoch
@@ -108,40 +114,44 @@ class Trainer:
             # Optionally save generated images, losses and model
             if save_dir is not None:
                 # Save generated images
-                rendered = self._render_fixed_img()
-                save_image(rendered.cpu(),
-                           save_dir + "/imgs_gen_{}.png".format(str(epoch + 1).zfill(3)), nrow=4)
-                # Save losses
-                with open(save_dir + '/loss_history.json', 'w') as loss_file:
-                    json.dump(self.loss_history, loss_file)
-                # Save epoch losses
-                with open(save_dir + '/epoch_loss_history.json', 'w') as loss_file:
-                    json.dump(self.epoch_loss_history, loss_file)
-                # Save model
-                if (epoch + 1) % save_freq == 0:
-                    if self.multi_gpu:
-                        self.model.module.save(save_dir + "/model.pt")
-                    else:
-                        self.model.save(save_dir + "/model.pt")
-
-            if test_dataloader is not None:
-                regression_loss, ssim_loss, total_loss = mean_dataset_loss(self, test_dataloader)
-                print("Validation:\nRegression: {:.4f}, SSIM: {:.4f}, Total: {:.4f}".format(regression_loss, ssim_loss, total_loss))
-                self.val_loss_history["regression"].append(regression_loss)
-                self.val_loss_history["ssim"].append(ssim_loss)
-                self.val_loss_history["total"].append(total_loss)
-                if save_dir is not None:
-                    # Save validation losses
-                    with open(save_dir + '/val_loss_history.json', 'w') as loss_file:
-                        json.dump(self.val_loss_history, loss_file)
-                    # If current validation loss is the lowest, save model as best
-                    # model
-                    if min(self.val_loss_history["total"]) == total_loss:
-                        print("New best model!")
+                with torch.no_grad:
+                    rendered = self._render_fixed_img()
+                    save_image(rendered.cpu(),
+                               save_dir + "/imgs_gen_{}.png".format(str(epoch + 1).zfill(3)), nrow=4)
+                    rendered = self._render_fixed_test_img()
+                    save_image(rendered.cpu(),
+                               save_dir + "/imgs_test_gen_{}.png".format(str(epoch + 1).zfill(3)), nrow=4)
+                    # Save losses
+                    with open(save_dir + '/loss_history.json', 'w') as loss_file:
+                        json.dump(self.loss_history, loss_file)
+                    # Save epoch losses
+                    with open(save_dir + '/epoch_loss_history.json', 'w') as loss_file:
+                        json.dump(self.epoch_loss_history, loss_file)
+                    # Save model
+                    if (epoch + 1) % save_freq == 0:
                         if self.multi_gpu:
-                            self.model.module.save(save_dir + "/best_model.pt")
+                            self.model.module.save(save_dir + "/model.pt")
                         else:
-                            self.model.save(save_dir + "/best_model.pt")
+                            self.model.save(save_dir + "/model.pt")
+
+                if test_dataloader is not None:
+                    regression_loss, ssim_loss, total_loss = mean_dataset_loss(self, test_dataloader)
+                    print("Validation:\nRegression: {:.4f}, SSIM: {:.4f}, Total: {:.4f}".format(regression_loss, ssim_loss, total_loss))
+                    self.val_loss_history["regression"].append(regression_loss)
+                    self.val_loss_history["ssim"].append(ssim_loss)
+                    self.val_loss_history["total"].append(total_loss)
+                    if save_dir is not None:
+                        # Save validation losses
+                        with open(save_dir + '/val_loss_history.json', 'w') as loss_file:
+                            json.dump(self.val_loss_history, loss_file)
+                        # If current validation loss is the lowest, save model as best
+                        # model
+                        if min(self.val_loss_history["total"]) == total_loss:
+                            print("New best model!")
+                            if self.multi_gpu:
+                                self.model.module.save(save_dir + "/best_model.pt")
+                            else:
+                                self.model.save(save_dir + "/best_model.pt")
 
         # Save model after training
         if save_dir is not None:
@@ -216,6 +226,13 @@ class Trainer:
         scenes, rotating them and rerendering).
         """
         _, rendered, _, _ = self.model(self.fixed_batch)
+        return rendered
+
+    def _render_fixed_test_img(self):
+        """Reconstructs fixed batch through neural renderer (by inferring
+        scenes, rotating them and rerendering).
+        """
+        _, rendered, _, _ = self.model(self.fixed_test_batch)
         return rendered
 
     def _print_losses(self, epoch_loss=False):

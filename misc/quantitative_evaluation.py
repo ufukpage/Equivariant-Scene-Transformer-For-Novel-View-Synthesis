@@ -1,9 +1,11 @@
 import torch
 import torch.nn.functional as F
 from misc.dataloaders import create_batch_from_data_list
+from torchvision.utils import save_image
+import time, os
 
 
-def get_dataset_psnr(device, model, dataset, source_img_idx_shift=64,
+def get_dataset_psnr(device, model, dataset, data_dir, source_img_idx_shift=64,
                      batch_size=10, max_num_scenes=None):
     """Returns PSNR for each scene in a dataset by comparing the view predicted
     by a model and the ground truth view.
@@ -25,13 +27,17 @@ def get_dataset_psnr(device, model, dataset, source_img_idx_shift=64,
         This function should be used with the ShapeNet chairs and cars *test*
         sets.
     """
+    timestamp = time.strftime("%Y-%m-%d_%H-%M")
+    save_dir = "{}_{}_{}".format(timestamp, os.path.split(data_dir)[1],"evaluation")
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
     num_imgs_per_scene = dataset.num_imgs_per_scene
     # Set number of scenes to calculate
     num_scenes = dataset.num_scenes
     if max_num_scenes is not None:
         num_scenes = min(max_num_scenes, num_scenes)
     # Calculate number of batches per scene
-    assert (num_imgs_per_scene - 1) % batch_size == 0, "Batch size {} must divide number of images per scene {}."
+    assert num_imgs_per_scene % batch_size == 0, "Batch size {} must divide number of images per scene {}."
     # Comparison are made against all images except the source image (and
     # therefore subtract 1 from total number of images) 
     batches_per_scene = (num_imgs_per_scene - 1) // batch_size
@@ -70,6 +76,7 @@ def get_dataset_psnr(device, model, dataset, source_img_idx_shift=64,
                                                         elevation_target)
                 img_predicted = model.render(rotated).detach()
                 scene_psnr += get_psnr(img_predicted, img_target)
+                save_predicted_batch(data_list, img_predicted, save_dir)
                 data_list = []
                 num_points_in_batch = 0
 
@@ -81,6 +88,16 @@ def get_dataset_psnr(device, model, dataset, source_img_idx_shift=64,
                                                               torch.mean(torch.Tensor(psnrs))))
 
     return psnrs
+
+
+def save_predicted_batch(data_list, img_predicts, save_dir):
+    for ind, data_item in enumerate(data_list):
+        scene_path, img_name = data_item["scene_name"], data_item["img_name"]
+        scene_name = os.path.split(scene_path)[1]
+        save_scene_path = os.path.join(save_dir, scene_name)
+        if not os.path.exists(save_scene_path):
+            os.makedirs(save_scene_path)
+        save_image(img_predicts[ind], save_scene_path + "/" + img_name + "_predicted.png", nrow=2)
 
 
 def get_psnr(prediction, target):
