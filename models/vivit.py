@@ -25,7 +25,6 @@ class Transformer(nn.Module):
         return self.norm(x)
 
 
-
 class ViViT(nn.Module):
     def __init__(self, image_size, patch_size, num_classes, num_frames, dim = 192, depth = 4, heads = 3, pool = 'cls', in_channels = 3, dim_head = 64, dropout = 0.,
                  emb_dropout = 0., scale_dim = 4, ):
@@ -83,9 +82,9 @@ class DeViT(nn.Module):
                  in_channels=3, dim_head=64, dropout=0., emb_dropout=0., scale_dim=4):
         super(DeViT, self).__init__()
 
-        assert volume_size % patch_size == 0, 'Image dimensions must be divisible by the patch size.'
+        assert volume_size % patch_size == 0, 'Volume dimensions must be divisible by the patch size.'
         in_channels = volume_size if in_channels is None else in_channels
-
+        self.volume_size = volume_size
         num_patches = (volume_size // patch_size) ** 2
         patch_dim = in_channels * patch_size ** 2
         self.patch_size = patch_size
@@ -105,16 +104,16 @@ class DeViT(nn.Module):
         x = self.to_patch_embedding(x)
         b, d, n, _ = x.shape
 
-        x += self.pos_embedding[:, :, :(n + 1)]     # self.pos_embedding[:, :, :(n + 1)]
+        x += self.pos_embedding[:, :, :n]     # self.pos_embedding[:, :, :(n + 1)]
         x = self.dropout(x)
 
         x = rearrange(x, 'b de n d -> (b de) n d')
         x = self.space_transformer(x)
-        # x = rearrange(x[:, 0], '(b t) ... -> b t ...', b=b)
+        # x = rearrange(x[: 0], '(b de) ... -> b de ...', b=b)
 
         x = self.depth_transformer(x)
-
-        return self.norm(x)
+        x = self.norm(x)
+        return rearrange(x, '(b de) (h w) d -> b (de h w) d', b=b, h=self.volume_size )
 
 
 if __name__ == "__main__":

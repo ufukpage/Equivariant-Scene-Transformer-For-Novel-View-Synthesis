@@ -7,8 +7,9 @@ from torch.utils.data import Dataset, DataLoader, Sampler
 from torchvision import transforms
 import os
 
+
 def scene_render_dataloader(path_to_data='chairs-train', batch_size=16,
-                            img_size=(3, 128, 128), crop_size=128):
+                            img_size=(3, 128, 128), crop_size=128, get_img_data=False):
     """Dataloader for scene render datasets. Returns scene renders in pairs,
     i.e. 1st and 2nd images are of some scene, 3rd and 4th are of some different
     scene and so on.
@@ -24,11 +25,11 @@ def scene_render_dataloader(path_to_data='chairs-train', batch_size=16,
     """
     assert batch_size % 2 == 0, "Batch size is {} but must be even".format(batch_size)
 
-    dataset = scene_render_dataset(path_to_data, img_size, crop_size)
+    dataset = scene_render_dataset(path_to_data, img_size, crop_size, get_img_data=get_img_data)
 
     sampler = RandomPairSampler(dataset)
 
-    return DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=2,
+    return DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0,
                       drop_last=True)
 
 

@@ -4,13 +4,24 @@ import sys
 import time
 import torch
 from misc.dataloaders import scene_render_dataloader
-from models.neural_renderer import NeuralRenderer, TransformerRenderer, SimpleTransformerRenderer, TransformerRendererV2
+from models.neural_renderer import NeuralRenderer, TransformerRenderer, SimpleTransformerRenderer, TransformerRendererV2\
+    , LinformerRenderer, LinearTransformerRenderer
 from models.vision_transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
 from training.training import Trainer
 
 if "__main__" == __name__:
     test_transformer = 0
     if test_transformer:
+
+        import torch
+        from linear_attention_transformer.images import ImageLinearAttention
+
+        attn = ImageLinearAttention(
+            chan=32,
+            heads=8,
+            key_dim=64  # can be decreased to 32 for more memory savings
+        )
+
         model_dict = torch.load("./2021-03-22_21-42_chairs-experiment/model.pt", map_location="cpu")
         config = model_dict["config"]
         # print(model_dict["state_dict"])
@@ -111,6 +122,10 @@ if "__main__" == __name__:
         model = TransformerRendererV2(
             config
         )
+    elif config["model_name"] == "l":
+        model = LinformerRenderer(config)
+    elif config["model_name"] == "lt":
+        model = LinearTransformerRenderer(config)
     else:
         # Set up renderer
         model = SimpleTransformerRenderer(
@@ -131,19 +146,21 @@ if "__main__" == __name__:
     # Set up trainer for renderer
     trainer = Trainer(device, model, lr=config["lr"],
                       rendering_loss_type=config["loss_type"],
-                      ssim_loss_weight=config["ssim_loss_weight"], feature_loss=config["feature_loss"])
+                      ssim_loss_weight=config["ssim_loss_weight"], feature_loss=config["feature_loss"]
+                      , iteration_verbose=config["iteration_verbose"] if "iteration_verbose" in config else 1)
 
     dataloader = scene_render_dataloader(path_to_data=config["path_to_data"],
                                          batch_size=config["batch_size"],
                                          img_size=config["img_shape"],
-                                         crop_size=128)
+                                         crop_size=128,
+                                         get_img_data=True)
 
     # Optionally set up test_dataloader
     if config["path_to_test_data"]:
         test_dataloader = scene_render_dataloader(path_to_data=config["path_to_test_data"],
                                                   batch_size=config["batch_size"],
                                                   img_size=config["img_shape"],
-                                                  crop_size=128)
+                                                  crop_size=128, get_img_data=True)
     else:
         test_dataloader = None
 

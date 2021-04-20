@@ -452,18 +452,312 @@ class TransformerRenderer(NeuralRenderer):
         model.load_state_dict(model_dict["state_dict"])
         return model
 
+from linformer import Linformer, LinformerSelfAttention
+
+
+class LinformerRenderer(TransformerRenderer):
+    def __init__(self, config):
+        super(LinformerRenderer, self).__init__(config)
+        num_patches = (config["img_shape"][1] // config["patch_sizes"][0]) ** 2
+        self.inv_transformer_2d = ViTransformer2DEncoder(
+            image_size=config["img_shape"][1],
+            patch_size=config["patch_sizes"][0],
+            transformer=LinformerSelfAttention(
+                dim=128,
+                heads=config["heads"][0],
+                k=256,
+                one_kv_head=True,
+                share_kv=True,
+                seq_len=num_patches
+            ),
+            dim=128
+        )
+        output_size = config["img_shape"][1] // config["patch_sizes"][0]
+        self.inv_transform_2d = nn.Sequential(
+            self.inv_transformer_2d,
+            Rearrange('b (p1 p2) c -> b c p1 p2', p1=output_size, p2=output_size)
+        )
+        num_patches = (output_size // config["patch_sizes"][1]) ** 2
+        self.inv_projection_transformer = ViTransformer2DEncoder(
+            image_size=output_size,
+            patch_size=config["patch_sizes"][1],
+            channels=128,
+            dim=1024,
+            transformer=LinformerSelfAttention(
+                dim=1024,
+                heads=config["heads"][1],
+                k=256,
+                one_kv_head=True,
+                share_kv=True,
+                seq_len=num_patches
+            )
+        )
+        self.inv_projection = nn.Sequential(
+            self.inv_projection_transformer,
+            Rearrange('b (p p2) (d p1) -> b d p1 p p2', p1=output_size, p2=output_size)
+        )
+        num_patches = (output_size // config["patch_sizes"][2]) ** 3
+        self.inv_transformer_3d = ViTransformer3DEncoder(
+            volume_size=output_size,
+            patch_size=config["patch_sizes"][2],  # config["patch_size_3d"],
+            transformer=LinformerSelfAttention(
+                dim=output_size * 2,
+                heads=config["heads"][2],
+                k=256,
+                one_kv_head=True,
+                share_kv=True,
+                seq_len=num_patches
+            ),
+            dim=output_size * 2
+        )
+        self.inv_transform_3d = nn.Sequential(
+            self.inv_transformer_3d,
+            Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
+                      c=output_size * 2)
+        )
+        num_patches = (output_size // config["patch_sizes"][3]) ** 3
+        self.transformer_3d = ViTransformer3DEncoder(
+            volume_size=output_size,
+            patch_size=config["patch_sizes"][3],
+            channels=output_size * 2,
+            transformer=LinformerSelfAttention(
+                dim=output_size,
+                heads=config["heads"][3],
+                k=256,
+                one_kv_head=True,
+                share_kv=True,
+                seq_len=num_patches
+            ),
+            dim=output_size
+        )
+
+        self.transform_3d = nn.Sequential(
+            self.transformer_3d,
+            Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
+                      c=output_size)
+        )
+
+        num_patches = (output_size // config["patch_sizes"][4]) ** 2
+        self.projection_transformer = ViTransformer2DEncoder(
+            image_size=output_size,
+            patch_size=config["patch_sizes"][4],
+            channels=output_size * output_size,
+            transformer=LinformerSelfAttention(
+                dim=256,
+                heads=config["heads"][4],
+                k=256,
+                one_kv_head=True,
+                share_kv=True,
+                seq_len=num_patches
+            ),
+            dim=256
+        )
+
+        self.projection = nn.Sequential(Rearrange('b c d h w -> b (c d) h w'),
+                                        self.projection_transformer,
+                                        Rearrange('b (p1 p2) c -> b c p1 p2', p1=output_size, p2=output_size)
+                                        )
+        num_patches = (output_size // config["patch_sizes"][5]) ** 2
+        self.transformer_2d = ViTransformer2DEncoder(
+            image_size=output_size,
+            patch_size=config["patch_sizes"][5],
+            channels=256,
+            transformer=LinformerSelfAttention(
+                dim=1024,
+                heads=config["heads"][5],
+                k=256,
+                one_kv_head=True,
+                share_kv=True,
+                seq_len=num_patches
+            ),
+            dim=1024,
+            # use_embeddings=False
+        )
+
+        self.transform_2d = nn.Sequential(
+            self.transformer_2d,
+            # Rearrange('b (p1 p2) c -> b c p1 p2', p1=config["img_shape"][1], p2=config["img_shape"][2]),
+            View([4, config["img_shape"][1], config["img_shape"][2]]),
+            nn.Conv2d(4, 3, 1)
+        )
+
+    @staticmethod
+    def load_model(filename):
+        """Loads a NeuralRenderer model from saved model config and weights.
+
+        Args:
+            filename (string): Path where model was saved.
+        """
+        model_dict = torch.load(filename, map_location="cpu")
+        config = model_dict["config"]
+        # Initialize a model based on config
+        model = LinformerRenderer(config)
+        # Load weights into model
+        model.load_state_dict(model_dict["state_dict"])
+        return model
+
+
+from linear_attention_transformer import LinearAttentionTransformer
+
+
+class LinearTransformerRenderer(TransformerRenderer):
+    def __init__(self, config):
+        super(LinearTransformerRenderer, self).__init__(config)
+        num_patches = (config["img_shape"][1] // config["patch_sizes"][0]) ** 2
+        self.inv_transformer_2d = ViTransformer2DEncoder(
+            image_size=config["img_shape"][1],
+            patch_size=config["patch_sizes"][0],
+            transformer=LinearAttentionTransformer(
+                dim=128,
+                depth=1,
+                heads=config["heads"][0],
+                n_local_attn_heads=config["heads"][0],
+                max_seq_len=num_patches,
+                local_attn_window_size=32
+            ),
+            dim=128
+        )
+        output_size = config["img_shape"][1]//config["patch_sizes"][0]
+        self.inv_transform_2d = nn.Sequential(
+                                self.inv_transformer_2d,
+                                Rearrange('b (p1 p2) c -> b c p1 p2', p1=output_size, p2=output_size)
+                                )
+        num_patches = (output_size // config["patch_sizes"][1]) ** 2
+        self.inv_projection_transformer = ViTransformer2DEncoder(
+            image_size=output_size,
+            patch_size=config["patch_sizes"][1],
+            channels=128,
+            dim=1024,
+            transformer=LinearAttentionTransformer(
+                dim=1024,
+                depth=1,
+                heads=config["heads"][1],
+                n_local_attn_heads=config["heads"][1],
+                max_seq_len=num_patches,
+                local_attn_window_size=32
+            )
+        )
+
+        self.inv_projection = nn.Sequential(
+                                self.inv_projection_transformer,
+                                Rearrange('b (p p2) (d p1) -> b d p1 p p2', p1=output_size, p2=output_size)
+                                # View([32, 32, 32, 32])
+                            )
+        num_patches = (output_size // config["patch_sizes"][2]) ** 3
+        self.inv_transformer_3d = ViTransformer3DEncoder(
+            volume_size=output_size,
+            patch_size=config["patch_sizes"][2], # config["patch_size_3d"],
+            transformer=LinearAttentionTransformer(
+                dim=output_size * 2,
+                depth=1,
+                heads=config["heads"][2],
+                n_local_attn_heads=config["heads"][2],
+                max_seq_len=num_patches,
+                local_attn_window_size=32
+            ),
+            dim=output_size * 2
+        )
+        self.inv_transform_3d = nn.Sequential(
+                                self.inv_transformer_3d,
+                                Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
+                                          c=output_size*2)
+                            )
+
+        num_patches = (output_size // config["patch_sizes"][3]) ** 3
+
+        self.transformer_3d = ViTransformer3DEncoder(
+            volume_size=output_size,
+            patch_size=config["patch_sizes"][3],
+            channels=output_size * 2,
+            transformer=LinearAttentionTransformer(
+                dim=output_size,
+                depth=1,
+                heads=config["heads"][3],
+                n_local_attn_heads=config["heads"][3],
+                max_seq_len=num_patches,
+                local_attn_window_size=32
+            ),
+            dim=output_size
+        )
+
+        self.transform_3d = nn.Sequential(
+                                self.transformer_3d,
+                                Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
+                                          c=output_size)
+                            )
+
+        num_patches = (output_size // config["patch_sizes"][4]) ** 2
+        self.projection_transformer = ViTransformer2DEncoder(
+            image_size=output_size,
+            patch_size=config["patch_sizes"][4],
+            channels=output_size * output_size,
+            transformer=LinearAttentionTransformer(
+                dim=256,
+                depth=1,
+                heads=config["heads"][4],
+                n_local_attn_heads=config["heads"][4],
+                max_seq_len=num_patches,
+                local_attn_window_size=32
+            ),
+            dim=256
+        )
+
+        self.projection = nn.Sequential(Rearrange('b c d h w -> b (c d) h w'),
+                                        self.projection_transformer,
+                                        Rearrange('b (p1 p2) c -> b c p1 p2', p1=output_size, p2=output_size)
+                                        )
+
+        num_patches = (output_size // config["patch_sizes"][5]) ** 2
+        self.transformer_2d = ViTransformer2DEncoder(
+            image_size=output_size,
+            patch_size=config["patch_sizes"][5],
+            channels=256,
+            transformer=LinearAttentionTransformer(
+                dim=1024,
+                depth=1,
+                heads=config["heads"][5],
+                n_local_attn_heads=config["heads"][5],
+                max_seq_len=num_patches,
+                local_attn_window_size=32
+            ),
+            dim=1024,
+            # use_embeddings=False
+        )
+
+        self.transform_2d = nn.Sequential(
+                                        self.transformer_2d,
+                                        # Rearrange('b (p1 p2) c -> b c p1 p2', p1=config["img_shape"][1], p2=config["img_shape"][2]),
+                                        View([4, config["img_shape"][1], config["img_shape"][2]]),
+                                        nn.Conv2d(4, 3, 1)
+                                        )
+
+    def print_model_info(self):
+        print("Number of parameters: {}\n".format(count_parameters(self)))
+
+    def get_model_config(self):
+        """Returns the complete model configuration as a dict."""
+        return self.config
+
+    @staticmethod
+    def load_model(filename):
+        """Loads a NeuralRenderer model from saved model config and weights.
+
+        Args:
+            filename (string): Path where model was saved.
+        """
+        model_dict = torch.load(filename, map_location="cpu")
+        config = model_dict["config"]
+        # Initialize a model based on config
+        model = LinearTransformerRenderer(config)
+        # Load weights into model
+        model.load_state_dict(model_dict["state_dict"])
+        return model
+
 
 from models.vivit import DeViT
-
-
 class TransformerRendererV2(TransformerRenderer):
     def __init__(self, config):
-        super(TransformerRenderer, self).__init__(img_shape=config["img_shape"], channels_2d=config["channels_2d"],
-                                                  strides_2d=config["strides_2d"],channels_3d=config["channels_3d"],
-                                                  strides_3d=config["strides_3d"],
-                                                  num_channels_inv_projection=config["num_channels_inv_projection"],
-                                                  num_channels_projection=config["num_channels_projection"],
-                                                  mode=config["mode"])
+        super(TransformerRendererV2, self).__init__(config)
 
         output_size = config["img_shape"][1]//config["patch_sizes"][0]
 
@@ -501,6 +795,7 @@ class TransformerRendererV2(TransformerRenderer):
         # Load weights into model
         model.load_state_dict(model_dict["state_dict"])
         return model
+
 
 class SimpleTransformerRenderer(NeuralRenderer):
     def __init__(self, config):

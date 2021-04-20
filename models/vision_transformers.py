@@ -150,7 +150,7 @@ class ViTransformer2DEncoderWrapper(ViTransformerWrapper):
         x = self.patch_to_embedding(x)
         b, n, _ = x.shape
 
-        x += self.pos_embedding[:, :(n)]
+        x += self.pos_embedding[:, :n]
         x = self.dropout(x)
 
         x = self.attn_layers(x)
@@ -185,7 +185,7 @@ class ViTransformer3DEncoderWrapper(ViTransformerWrapper):
             x = self.patch_to_embedding(x)
         b, n, _ = x.shape
 
-        x += self.pos_embedding[:, :(n + 1)]
+        x += self.pos_embedding[:, :n]
         x = self.dropout(x)
 
         x = self.attn_layers(x)

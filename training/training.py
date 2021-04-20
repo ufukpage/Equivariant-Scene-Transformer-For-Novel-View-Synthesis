@@ -17,7 +17,7 @@ class Trainer:
         ssim_loss_weight (float): Weight assigned to SSIM loss.
     """
     def __init__(self, device, model, lr=2e-4, rendering_loss_type='l1',
-                 ssim_loss_weight=0.05, feature_loss=False):
+                 ssim_loss_weight=0.05, feature_loss=False, iteration_verbose=1):
         self.device = device
         self.model = model
         self.lr = lr
@@ -28,7 +28,7 @@ class Trainer:
         self.register_losses = True
         # Check if model is multi-gpu
         self.multi_gpu = isinstance(self.model, nn.DataParallel)
-
+        self.iteration_verbose = iteration_verbose
         # Initialize optimizer
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
@@ -100,7 +100,7 @@ class Trainer:
 
         for epoch in range(epochs):
             epoch = epoch + resume_epoch if resume_epoch is not None else epoch
-            print("\nEpoch {}".format(epoch + 1))
+            print("\nEpoch {}".format(epoch + 1)) if (epoch + 1) % self.iteration_verbose == 0 else None
             self._train_epoch(dataloader)
             # Update epoch loss history with mean loss over epoch
             for loss_type in self.recorded_losses:
@@ -114,7 +114,7 @@ class Trainer:
             # Optionally save generated images, losses and model
             if save_dir is not None:
                 # Save generated images
-                with torch.no_grad:
+                with torch.no_grad():
                     rendered = self._render_fixed_img()
                     save_image(rendered.cpu(),
                                save_dir + "/imgs_gen_{}.png".format(str(epoch + 1).zfill(3)), nrow=4)
