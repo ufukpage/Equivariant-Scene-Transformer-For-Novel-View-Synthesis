@@ -5,79 +5,14 @@ import time
 import torch
 from misc.dataloaders import scene_render_dataloader
 from models.neural_renderer import NeuralRenderer, TransformerRenderer, SimpleTransformerRenderer, TransformerRendererV2\
-    , LinformerRenderer, LinearTransformerRenderer
+    , LinformerRenderer, LinearTransformerRenderer, VanillaTransformerRenderer, TransformerRendererV3, \
+    TransformerRendererNop, TransformerRendererV0,TransformerRendererV01, DepthFormerRenderer
 from models.vision_transformers import ViTransformer2DEncoder, ViTransformer3DEncoder
 from training.training import Trainer
 
 if "__main__" == __name__:
-    test_transformer = 0
-    if test_transformer:
-
-        import torch
-        from linear_attention_transformer.images import ImageLinearAttention
-
-        attn = ImageLinearAttention(
-            chan=32,
-            heads=8,
-            key_dim=64  # can be decreased to 32 for more memory savings
-        )
-
-        model_dict = torch.load("./2021-03-22_21-42_chairs-experiment/model.pt", map_location="cpu")
-        config = model_dict["config"]
-        # print(model_dict["state_dict"])
-        for param_tensor in model_dict["state_dict"]:
-            print(param_tensor, "\t", model_dict["state_dict"][param_tensor].size())
-        exit(1)
-        from nystrom_attention import Nystromformer
-
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        path_to_config = sys.argv[1]
-        with open(path_to_config) as file:
-            config = json.load(file)
-
-        from x_transformers import ViTransformerWrapper, TransformerWrapper, Encoder, Decoder
-        import torch.nn as nn
-        from nystrom_attention import Nystromer
-        inv_transform_2d = ViTransformer2DEncoder(
-            image_size=config["img_shape"][1],
-            patch_size=config["patch_size_2d"],
-            transformer=Nystromformer(
-                dim=1024,
-                depth=6,
-                heads=8,
-                num_landmarks=256,
-            ),
-            dim=1024
-        ).to(device)
-
-        inv_transform_3d = ViTransformer3DEncoder(
-            volume_size=32,
-            patch_size=config["patch_size_3d"],
-            transformer=Encoder(
-                dim=2048,
-                depth=6,
-                heads=8,
-                ff_glu=True
-            ),
-            dim=2048
-        ).to(device)
-
-        # uplift3d = nn.Linear(1024, 1024)
-        uplift3d = nn.Conv2d(256, 1024, kernel_size=1).to(device)
-
-        # encoder.forward = def
-        img = torch.randn(3, 3, 128, 128).to(device)
-        feats_1d = inv_transform_2d(img)  # (1, 1000)
-
-        # inv_projection isminde olacak
-        feats_2d = feats_1d.view(3, feats_1d.shape[1], 32, -1)
-        uplifted_feats = uplift3d(feats_2d)
-        feats_3d = uplifted_feats.view(3, uplifted_feats.shape[2], 32, 32, -1)
-
-        feats_3d = inv_transform_3d(feats_3d)
-        scene = feats_3d.view(3, 32, 32, 32, -1)
-        exit(0)
-
+    # torch.backends.cudnn.benchmark = True
+    # torch.backends.cudnn.enabled = True
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     # Get path to data from command line arguments
@@ -113,8 +48,24 @@ if "__main__" == __name__:
             num_channels_projection=config["num_channels_projection"],
             mode=config["mode"]
         )
+    elif config["model_name"] == "tv0":
+        model = TransformerRendererV0(
+            config
+        )
+    elif config["model_name"] == "df":
+        model = DepthFormerRenderer(
+            config
+        )
+    elif config["model_name"] == "tv01":
+        model = TransformerRendererV01(
+            config
+        )
+    elif config["model_name"] == "vt":
+        model = VanillaTransformerRenderer(
+            config
+        )
     elif config["model_name"] == "t":
-        # Set up renderer
+
         model = TransformerRenderer(
             config
         )
@@ -122,10 +73,19 @@ if "__main__" == __name__:
         model = TransformerRendererV2(
             config
         )
+    elif config["model_name"] == "tv3":
+        model = TransformerRendererV3(
+            config
+        )
     elif config["model_name"] == "l":
         model = LinformerRenderer(config)
     elif config["model_name"] == "lt":
         model = LinearTransformerRenderer(config)
+    elif config["model_name"] == "nop":
+
+        model = TransformerRendererNop(
+            config
+        )
     else:
         # Set up renderer
         model = SimpleTransformerRenderer(

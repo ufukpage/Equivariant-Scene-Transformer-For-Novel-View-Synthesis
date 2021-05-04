@@ -3,9 +3,8 @@ from torch import nn
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 from models.module import Attention, PreNorm, FeedForward
-import numpy as np
-
 # from hamburger_pytorch import Hamburger
+
 
 class Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
@@ -117,7 +116,23 @@ class DeViT(nn.Module):
 
 
 if __name__ == "__main__":
-    
+    from vit_pytorch.levit import LeViT
+
+    levit = LeViT(
+        image_size=224,
+        num_classes=1000,
+        stages=3,  # number of stages
+        dim=(256, 384, 512),  # dimensions at each stage
+        depth=4,  # transformer of depth 4 at each stage
+        heads=(4, 6, 8),  # heads at each stage
+        mlp_mult=2,
+        dropout=0.1
+    )
+
+    img = torch.randn(1, 3, 224, 224)
+
+    levit(img)  # (1, 1000)
+    exit(0)
     img = torch.ones([1, 16, 3, 224, 224]).cuda()
     
     # model = ViViT(224, 16, 100, 16).cuda()
@@ -130,5 +145,3 @@ if __name__ == "__main__":
     
     print("Shape of out :", out.shape)      # [B, num_classes]
 
-    
-    

@@ -1,10 +1,9 @@
 import sys
 import torch
-import json
 from misc.dataloaders import scene_render_dataset
 from misc.quantitative_evaluation import get_dataset_psnr
-from models.neural_renderer import load_model
-from models.neural_renderer import NeuralRenderer, TransformerRenderer, SimpleTransformerRenderer, TransformerRendererV2
+from models.neural_renderer import NeuralRenderer, TransformerRenderer, SimpleTransformerRenderer, TransformerRendererV2\
+    , LinformerRenderer, LinearTransformerRenderer
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -23,6 +22,10 @@ elif model_type == "t":
     model = TransformerRenderer.load_model(model_path)
 elif model_type == "tv2":
     model = TransformerRendererV2.load_model(model_path)
+elif model_type == "l":
+    model = LinformerRenderer.load_model(model_path)
+elif model_type == "lt":
+    model = LinearTransformerRenderer.load_model(model_path)
 else:
     # Set up renderer
     model = SimpleTransformerRenderer.load_model(model_path)
@@ -35,5 +38,5 @@ dataset = scene_render_dataset(path_to_data=data_dir, img_size=(3, 128, 128),
 
 # Calculate PSNR
 with torch.no_grad():
-    psnrs = get_dataset_psnr(device, model, dataset, data_dir, source_img_idx_shift=64,
+    psnrs = get_dataset_psnr(device, model, dataset, data_dir, source_img_idx_shift=12,
                              batch_size=2, max_num_scenes=None)

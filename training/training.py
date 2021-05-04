@@ -4,6 +4,7 @@ import torch.nn as nn
 
 from pytorch_msssim import SSIM
 from torchvision.utils import save_image
+from models.neural_renderer import get_swapped_indices
 
 
 class Trainer:
@@ -89,13 +90,14 @@ class Trainer:
             self.fixed_batch = batch
             # Render images before any training
             rendered = self._render_fixed_img()
-            save_image(rendered.cpu(),
+            save_image(rendered.detach(),
                        save_dir + "/imgs_gen_{}.png".format(str(0).zfill(3)), nrow=4)
             for batch in test_dataloader:
                 break
+            save_image(batch["img"], save_dir + "/imgs_test_ground_truth.png", nrow=4)
             self.fixed_test_batch = batch
             rendered = self._render_fixed_test_img()
-            save_image(rendered.cpu(),
+            save_image(rendered.detach(),
                        save_dir + "/imgs_test_gen_{}.png".format(str(0).zfill(3)), nrow=4)
 
         for epoch in range(epochs):
@@ -116,10 +118,10 @@ class Trainer:
                 # Save generated images
                 with torch.no_grad():
                     rendered = self._render_fixed_img()
-                    save_image(rendered.cpu(),
+                    save_image(rendered.detach(),
                                save_dir + "/imgs_gen_{}.png".format(str(epoch + 1).zfill(3)), nrow=4)
                     rendered = self._render_fixed_test_img()
-                    save_image(rendered.cpu(),
+                    save_image(rendered.detach(),
                                save_dir + "/imgs_test_gen_{}.png".format(str(epoch + 1).zfill(3)), nrow=4)
                     # Save losses
                     with open(save_dir + '/loss_history.json', 'w') as loss_file:
@@ -170,6 +172,7 @@ class Trainer:
         num_iterations = len(dataloader)
         for i, batch in enumerate(dataloader):
             # Train inverse and forward renderer on batch
+            # torch.cuda.empy_cache()
             self._train_iteration(batch)
 
             # Print iteration losses
@@ -198,8 +201,13 @@ class Trainer:
         self.optimizer.zero_grad()
 
         loss_regression = self.loss_func(rendered, imgs)
+
         if self.feature_loss:
-            loss_regression = loss_regression + self.scene_feature_loss(scenes, scenes_rotated)
+            # swapped_idx = get_swapped_indices(scenes_rotated.shape[0])
+            scene_loss = self.scene_feature_loss(scenes, scenes_rotated) * 0.3
+            print("Scene Loss: " + str(scene_loss.item()))
+            loss_regression = loss_regression*0.7 + scene_loss
+            # loss_regression = loss_regression+ scene_loss
 
         if self.use_ssim:
             # We want to maximize SSIM, i.e. minimize -SSIM
@@ -209,17 +217,18 @@ class Trainer:
             loss_total = loss_regression
 
         loss_total.backward()
+        # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
         self.optimizer.step()
 
         # Record total loss
         if self.register_losses:
-            self.loss_history["total"].append(loss_total.item())
-            self.loss_history["regression"].append(loss_regression.item())
+            self.loss_history["total"].append(loss_total.detach().item())
+            self.loss_history["regression"].append(loss_regression.detach().item())
             # If SSIM is not used, register 0 in logs
             if not self.use_ssim:
                 self.loss_history["ssim"].append(0.)
             else:
-                self.loss_history["ssim"].append(loss_ssim.item())
+                self.loss_history["ssim"].append(loss_ssim.detach().item())
 
     def _render_fixed_img(self):
         """Reconstructs fixed batch through neural renderer (by inferring

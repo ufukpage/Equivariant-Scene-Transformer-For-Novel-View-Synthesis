@@ -72,7 +72,7 @@ class SphericalMask(nn.Module):
         for i in range(depth):
             for j in range(height):
                 for k in range(width):
-                    squared_distance = (mask_center - i) ** 2  + (mask_center - j) ** 2 + (mask_center - k) ** 2
+                    squared_distance = (mask_center - i) ** 2 + (mask_center - j) ** 2 + (mask_center - k) ** 2
                     if squared_distance > (radius_fraction * radius) ** 2:
                         mask[:, i, j, k] = 0.
 

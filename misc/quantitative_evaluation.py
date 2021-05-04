@@ -31,6 +31,7 @@ def get_dataset_psnr(device, model, dataset, data_dir, source_img_idx_shift=64,
     save_dir = "{}_{}_{}".format(timestamp, os.path.split(data_dir)[1],"evaluation")
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
+
     num_imgs_per_scene = dataset.num_imgs_per_scene
     # Set number of scenes to calculate
     num_scenes = dataset.num_scenes
