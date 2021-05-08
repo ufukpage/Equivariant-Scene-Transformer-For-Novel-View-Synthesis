@@ -261,7 +261,7 @@ class Projection(nn.Module):
         """
         batch_size, channels, depth, height, width = inputs.shape
         # Reshape 3D -> 2D
-        reshaped = inputs.reshape(batch_size, channels * depth, height, width)
+        reshaped = inputs.contiguous().view(batch_size, channels * depth, height, width)
         # 1x1 conv layers
         return self.forward_layers(reshaped)
 

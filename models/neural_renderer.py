@@ -120,7 +120,7 @@ class NeuralRenderer(nn.Module):
         """
         features_3d = self.transform_3d(scene)
         features_2d = self.projection(features_3d)
-        return torch.tanh(self.transform_2d(features_2d)) + 0.5
+        return torch.sigmoid(self.transform_2d(features_2d))
 
     def inverse_render(self, img):
         """Maps an image to a (spherical) scene representation.
@@ -376,7 +376,7 @@ class TransformerRendererV0(NeuralRenderer):
         model.load_state_dict(model_dict["state_dict"])
         return model
 
-from einops import rearrange
+
 class TransformerRendererV01(TransformerRendererV0):
 
     def __init__(self, config):
@@ -384,34 +384,31 @@ class TransformerRendererV01(TransformerRendererV0):
 
         output_size = config["img_shape"][1] // config["patch_sizes"][0]
 
-        self.angle_embedder = ViewEmbedding(1, output_size)# FixedEmbedding(output_size) #ViewEmbedding(2, output_size)
-        # self.azimuth_embedder = FixedEmbedding(output_size)
-        self.inv_transform_3d = Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
-                                c=output_size * 2)
+        self.transformer_3d = ViTransformer3DEncoder(
+            volume_size=output_size,
+            patch_size=config["patch_sizes"][3],
+            channels=output_size * 2,
+            pos_emd=False,
+            view_emd=True,
+            transformer=Nystromer(
+                dim=output_size,
+                depth=1,
+                heads=config["heads"][3],
+            ),
+            dim=output_size
+        )
 
+        self.transform_3d = nn.Sequential(
+            Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
+                      c=output_size)
+        )
 
-    def render(self, scene):
-        features_3d = self.transform_3d(scene)
+    def render_angles(self, scene, az, el):
+        features_3d = self.transform_3d(self.transformer_3d(scene,  az, el))
         features_2d = self.projection(features_3d)
         return torch.sigmoid(self.transform_2d(features_2d))
 
-    def inverse_render(self, img):
-
-        # Transform image to 2D features
-        features_2d = self.inv_transform_2d(img)
-        # Perform inverse projection
-        features_3d = self.inv_projection(features_2d)
-        # Map 3D features to scene representation
-        scene = self.inv_transformer_3d(features_3d)
-        scene = self.inv_transform_3d(scene)
-
-        # Ensure scene is spherical
-        return self.spherical_mask(scene)
-
     def forward(self, batch):
-
-        # Slightly hacky way of extracting model device. Device on which
-        # spherical is stored is the one where model is too
         device = self.spherical_mask.mask.device
         imgs = batch["img"].to(device)
         params = batch["render_params"]
@@ -429,12 +426,9 @@ class TransformerRendererV01(TransformerRendererV0):
             self.rotate_source_to_target(scenes, azimuth, elevation,
                                          azimuth_swapped, elevation_swapped)
 
-        azimuth_embedding = self.angle_embedder(azimuth)
-        elevation_embedding = self.angle_embedder(elevation)
-
         scenes_rotated = scenes_swapped[swapped_idx]
 
-        rendered = self.render(scenes_rotated)
+        rendered = self.render_angles(scenes_rotated, azimuth_swapped, elevation_swapped)
 
         return imgs, rendered, scenes, scenes_rotated
 
@@ -442,15 +436,10 @@ class TransformerRendererV01(TransformerRendererV0):
 from models.timesformer import  DepthFormer
 
 
-class DepthFormerRenderer(NeuralRenderer):
+class DepthFormerRenderer(TransformerRendererV0):
 
     def __init__(self, config):
-        super(DepthFormerRenderer, self).__init__(img_shape=config["img_shape"], channels_2d=config["channels_2d"],
-                                                    strides_2d=config["strides_2d"],channels_3d=config["channels_3d"],
-                                                    strides_3d=config["strides_3d"],
-                                                    num_channels_inv_projection=config["num_channels_inv_projection"],
-                                                    num_channels_projection=config["num_channels_projection"],
-                                                    mode=config["mode"])
+        super(DepthFormerRenderer, self).__init__(config)
         self.config = config
 
         output_size = config["img_shape"][1] // config["patch_sizes"][0]
@@ -485,12 +474,6 @@ class DepthFormerRenderer(NeuralRenderer):
             Rearrange('b (h w d) c -> b c h w d', h=output_size, w=output_size, d=output_size,
                       c=output_size)
         )
-
-    def print_model_info(self):
-        print("Number of parameters: {}\n".format(count_parameters(self)))
-
-    def get_model_config(self):
-        return self.config
 
     @staticmethod
     def load_model(filename):

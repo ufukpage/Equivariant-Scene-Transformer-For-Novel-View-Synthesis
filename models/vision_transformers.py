@@ -7,41 +7,6 @@ from vit_pytorch.efficient import ViT
 from positional_encodings import PositionalEncodingPermute1D, PositionalEncodingPermute2D, PositionalEncodingPermute3D
 
 
-class ViewEmbedding(nn.Module):
-    def __init__(self, in_channels, N_freqs, logscale=True):
-        """
-        Defines a function that embeds x to (x, sin(2^k x), cos(2^k x), ...)
-        in_channels: number of input channels (3 for both xyz and direction)
-        """
-        super(ViewEmbedding, self).__init__()
-        self.N_freqs = N_freqs
-        self.in_channels = in_channels
-        self.funcs = [torch.sin, torch.cos]
-        self.out_channels = in_channels*(len(self.funcs)*N_freqs+1)
-
-        if logscale:
-            self.freq_bands = 2**torch.linspace(0, N_freqs-1, N_freqs)
-        else:
-            self.freq_bands = torch.linspace(1, 2**(N_freqs-1), N_freqs)
-
-    def forward(self, x):
-        """
-        Embeds x to (x, sin(2^k x), cos(2^k x), ...)
-        Different from the paper, "x" is also in the output
-        See https://github.com/bmild/nerf/issues/12
-        Inputs:
-            x: (B, self.in_channels)
-        Outputs:
-            out: (B, self.out_channels)
-        """
-        out = [x]
-        for freq in self.freq_bands:
-            for func in self.funcs:
-                out += [func(freq*x)]
-
-        return torch.cat(out, -1)
-
-
 class FixedEmbedding(nn.Module):
     def __init__(self, dim):
         super(FixedEmbedding, self).__init__()
@@ -53,6 +18,19 @@ class FixedEmbedding(nn.Module):
         sinusoid_inp = torch.einsum('i , j -> i j', t, self.inv_freq)
         emb = torch.cat((sinusoid_inp.sin(), sinusoid_inp.cos()), dim=-1)
         return emb[None, :, :]
+
+
+class ViewEmbedding(nn.Module):
+    def __init__(self, dim):
+        super(ViewEmbedding, self).__init__()
+        inv_freq = 1. / (10000 ** (torch.arange(0, dim, 2).float() / dim))
+        self.register_buffer('inv_freq', inv_freq)
+
+    def forward(self, angles, seq_dim, offset = 0):
+
+        t = torch.ones(len(angles), seq_dim, device = angles.device).type_as(self.inv_freq) * angles[:, None] + offset
+        sinusoid_inp = torch.einsum('b i , j ->b i j', t, self.inv_freq)
+        return torch.cat((sinusoid_inp.sin(), sinusoid_inp.cos()), dim=-1)
 
 
 class ViTransformer2DEncoder(nn.Module):
@@ -112,7 +90,8 @@ class ViTransformer3DEncoder(nn.Module):
         dim=None,
         pos_emd=False,
         channels=None,
-        use_embeddings=True
+        use_embeddings=True,
+        view_emd=False
     ):
         # super(ViTransformer3DEncoder, self).__init__(image_size=)
         super(ViTransformer3DEncoder, self).__init__()
@@ -124,13 +103,17 @@ class ViTransformer3DEncoder(nn.Module):
 
         if pos_emd:
             self.pos_embedding = nn.Parameter(torch.randn(1, num_patches, dim))
+            # self.fixed = FixedEmbedding(dim)
         self.use_embeddings = use_embeddings
+        if view_emd:
+            self.view_embedding = ViewEmbedding(dim)
+
         self.transformer = transformer
         self.patch_size = patch_size
         self.norm = nn.LayerNorm(dim)
         self.to_latent = nn.Identity()
 
-    def forward(self, img, view_embedding=None):
+    def forward(self, img, azimuth=None, elevation=None):
         p = self.patch_size
 
         x = rearrange(img, 'b c (h p1) (w p2) (d p3)-> b (h w d) (p1 p2 p3 c)', p1=p, p2=p, p3=p)
@@ -140,10 +123,12 @@ class ViTransformer3DEncoder(nn.Module):
         b, n, _ = x.shape
 
         if hasattr(self, 'pos_embedding'):
+            # fixed_pos = self.fixed(x)
             x += self.pos_embedding[:, :n]
 
-        if view_embedding:
-            x += view_embedding
+        if hasattr(self, 'view_embedding'):
+            x += self.view_embedding(azimuth.detach(), x.shape[1])
+            x += self.view_embedding(elevation.detach(), x.shape[1])
 
         x = self.transformer(x)
         x = self.norm(x)

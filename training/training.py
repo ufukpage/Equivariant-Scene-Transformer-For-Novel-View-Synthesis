@@ -4,7 +4,6 @@ import torch.nn as nn
 
 from pytorch_msssim import SSIM
 from torchvision.utils import save_image
-from models.neural_renderer import get_swapped_indices
 
 
 class Trainer:
@@ -52,6 +51,10 @@ class Trainer:
         self.loss_history = {loss_type: [] for loss_type in self.recorded_losses}
         self.epoch_loss_history = {loss_type: [] for loss_type in self.recorded_losses}
         self.val_loss_history = {loss_type: [] for loss_type in self.recorded_losses}
+
+        self.image_weight = 0.9
+        self.scene_weight = 0.1
+        self.after_scene_epoch = 10
 
     def train(self, dataloader, epochs, save_dir=None, save_freq=1,
               test_dataloader=None, load_path=None, resume_epoch=None):
@@ -101,6 +104,7 @@ class Trainer:
                        save_dir + "/imgs_test_gen_{}.png".format(str(0).zfill(3)), nrow=4)
 
         for epoch in range(epochs):
+            self.epoch = epoch
             epoch = epoch + resume_epoch if resume_epoch is not None else epoch
             print("\nEpoch {}".format(epoch + 1)) if (epoch + 1) % self.iteration_verbose == 0 else None
             self._train_epoch(dataloader)
@@ -202,11 +206,11 @@ class Trainer:
 
         loss_regression = self.loss_func(rendered, imgs)
 
-        if self.feature_loss:
+        if self.feature_loss and self.epoch > self.after_scene_epoch:
             # swapped_idx = get_swapped_indices(scenes_rotated.shape[0])
-            scene_loss = self.scene_feature_loss(scenes, scenes_rotated) * 0.3
-            print("Scene Loss: " + str(scene_loss.item()))
-            loss_regression = loss_regression*0.7 + scene_loss
+            scene_loss = self.scene_feature_loss(scenes, scenes_rotated) * self.scene_weight
+            print("Scene Loss: " + str(scene_loss.detach().item()))
+            loss_regression = loss_regression * self.image_weight + scene_loss
             # loss_regression = loss_regression+ scene_loss
 
         if self.use_ssim:
@@ -280,8 +284,9 @@ def mean_dataset_loss(trainer, dataloader):
             # Update losses
             # Use _loss_func here and not _loss_renderer since we only want regression term
             current_regression_loss = trainer.loss_func(rendered, imgs).item()
-            if trainer.feature_loss:
-                current_regression_loss = current_regression_loss + trainer.scene_feature_loss(scenes, scenes_rotated).item()
+            if trainer.feature_loss and trainer.epoch > trainer.after_scene_epoch:
+                current_regression_loss = current_regression_loss * trainer.image_weight + \
+                                          trainer.scene_feature_loss(scenes, scenes_rotated).item() * trainer.scene_weight
             if trainer.use_ssim:
                 current_ssim_loss = 1. - trainer.ssim_loss_func(rendered, imgs).item()
             else:
