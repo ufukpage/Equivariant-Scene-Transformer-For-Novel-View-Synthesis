@@ -1,16 +1,8 @@
-# Equivariant Neural Rendering
+#  Equivariant Scene Transformer For Novel View Synthesis
 
-This repo contains code to reproduce all experiments in [Equivariant Neural Rendering](https://arxiv.org/abs/2006.07630) by [E. Dupont](https://emiliendupont.github.io), [M. A. Bautista](https://scholar.google.com/citations?user=ZrRs-qoAAAAJ&hl=en), [A. Colburn](https://www.colburn.org), [A. Sankar](https://scholar.google.com/citations?user=6ZDIdEAAAAAJ&hl=en), [C. Guestrin](https://homes.cs.washington.edu/~guestrin/), [J. Susskind](https://scholar.google.com/citations?user=Sv2TGqsAAAAJ&hl=en), [Q. Shan](http://shanqi.github.io), ICML 2020.
-
-
+This repo based on [Equivariant Neural Rendering](https://arxiv.org/abs/2006.07630) by [E. Dupont](https://emiliendupont.github.io), [M. A. Bautista](https://scholar.google.com/citations?user=ZrRs-qoAAAAJ&hl=en), [A. Colburn](https://www.colburn.org), [A. Sankar](https://scholar.google.com/citations?user=6ZDIdEAAAAAJ&hl=en), [C. Guestrin](https://homes.cs.washington.edu/~guestrin/), [J. Susskind](https://scholar.google.com/citations?user=Sv2TGqsAAAAJ&hl=en), [Q. Shan](http://shanqi.github.io), ICML 2020.
 
 
-
-### Pre-trained models
-
-The weights for the trained chairs model are provided in `trained-models/chairs.pt`. 
-
-The other pre-trained models are located https://icml20-prod.cdn-apple.com/eqn-data/models/pre-trained_models.zip.  They should be downloaded and placed into the trained-models directory.  A small model chairs.pt is included in the git repo.
 
 ## Examples
 
@@ -74,21 +66,3 @@ The jupyter notebook `exploration.ipynb` shows how to use a trained model to inf
 The diagram below details the coordinate system we use for the voxel grid. Due to the manner in which images are stored in arrays and the way PyTorch's `affine_grid` and `grid_sample` functions work, this is a slightly unusual coordinate system. Note that `theta` and `phi` correspond to elevation and azimuth rotations of the **camera** around the scene representation. Note also that these are left handed rotations. Full details of the voxel rotation function can be found in `transforms3d/rotations.py`.
 
 <img src="imgs/coordinate-system.png" width="400">
-
-## Citing
-
-If you find this code useful in your research, consider citing with
-
-```
-@article{dupont2020equivariant,
-  title={Equivariant Neural Rendering},
-  author={Dupont, Emilien and Miguel Angel, Bautista and Colburn, Alex and Sankar, Aditya and Guestrin, Carlos and Susskind, Josh and Shan, Qi},
-  journal={arXiv preprint arXiv:2006.07630},
-  year={2020}
-}
-```
-
-## License
-
-This project is licensed under the Apple Sample Code License
-
